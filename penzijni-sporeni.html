@@ -147,6 +147,8 @@
 .chart-box svg{ width:100%; height:auto; display:block; touch-action:pan-y; }
 .chart-box text{ font-family:'Work Sans', sans-serif; font-size:11px; fill:var(--ink-soft); }
 .chart-legend{ display:flex; flex-wrap:wrap; gap:6px 18px; font-size:0.82rem; margin-top:8px; color:var(--ink-soft); }
+.chart-legend i.dash{ background:none !important; border-top:2px dashed var(--ink-soft); height:0; }
+.chart-legend b{ color:var(--ink); font-weight:600; font-family:'IBM Plex Mono', monospace; font-size:0.78rem; }
 .chart-legend i{ display:inline-block; width:18px; height:3px; border-radius:2px; vertical-align:middle; margin-right:6px; }
 .chart-tip{
   position:absolute; pointer-events:none; z-index:2;
@@ -311,14 +313,12 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
 
     <div class="panel">
       <div class="panel-title">Vývoj spoření</div>
+      <label class="switch" style="margin-bottom:10px"><input type="checkbox" id="sw-compare"><span class="track"></span>Porovnat všechny typy fondů</label>
       <div class="chart-box" id="chart-box">
         <svg id="chart" viewBox="0 0 720 340" role="img" aria-label="Graf vývoje naspořené částky"></svg>
         <div class="chart-tip" id="chart-tip" hidden></div>
       </div>
-      <div class="chart-legend">
-        <span><i style="background:var(--accent)"></i>Hodnota účtu</span>
-        <span><i style="background:var(--focus)"></i><span id="lab-dep">Vloženo (včetně státního příspěvku)</span></span>
-      </div>
+      <div class="chart-legend" id="chart-legend"></div>
     </div>
 
     <div class="panel">
@@ -397,6 +397,7 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
   var R_DYN = 8, R_KONS = 1.5;
   var CYCLE_FROM = 43, CYCLE_TO = 60;
   var FEES = [0.5, 1];
+  var FUND_COLORS = {kons:'#1e6f66', vyv:'#6b5bb5', dyn:'#c9581f', cyk:'#212b34'};
   var STATE_RATE = 0.2, STATE_MIN = 500, STATE_CAP = 1700;
   var TAX_RATE = 15;                      // sazba daně z příjmu v %
   var TAX_FREE_YEARLY = STATE_CAP * 12;   // 20 400 Kč ročně: část vkladů nad touto hranicí je odečitatelná
@@ -509,7 +510,7 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
   var S = {fund:'cyk', fee:1};
   var MODE = 'pen';   // 'pen' = penzijní spoření, 'dip' = dlouhodobý investiční produkt
   var FIELDS = ['in-initial','in-monthly','in-start','in-end','in-infl','fee-slider'];
-  var SWITCHES = ['sw-fee','sw-state','sw-tax','sw-reinvest','sw-infl'];
+  var SWITCHES = ['sw-fee','sw-state','sw-tax','sw-reinvest','sw-infl','sw-compare'];
   var saved = {};
   function snapshot(){
     var o = {v:{}, c:{}, fund:S.fund, fee:S.fee};
@@ -589,17 +590,17 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
   }
 
   var chartData = null;
-  function drawChart(res, startAge, endAge){
-    var pts = res.points;
+  // series: [{label, color, w, pts}] — pts mají t, bal, dep (dep je u všech řad stejné)
+  function drawChart(series, startAge, endAge, fill){
     var maxY = 0;
-    pts.forEach(function(q){ maxY = Math.max(maxY, q.bal, q.dep); });
+    series.forEach(function(sr){ sr.pts.forEach(function(q){ maxY = Math.max(maxY, q.bal, q.dep); }); });
     if(maxY <= 0) maxY = 1;
     var step = niceStep(maxY, 5);
     var top = Math.ceil(maxY/step) * step;
     var span = endAge - startAge;
     var x = function(t){ return ML + (t/span) * (W-ML-MR); };
     var y = function(v){ return MT + (1 - v/top) * (H-MT-MB); };
-    chartData = {pts:pts, x:x, y:y, startAge:startAge, span:span};
+    chartData = {series:series, x:x, y:y, startAge:startAge, span:span};
 
     var s = '';
     for(var v = 0; v <= top + step/1000; v += step){
@@ -614,22 +615,26 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
     s += '<text x="'+(W-MR)+'" y="'+(H-4)+'" text-anchor="end">věk (roky)</text>';
     s += '<line x1="'+ML+'" x2="'+(W-MR)+'" y1="'+(H-MB)+'" y2="'+(H-MB)+'" stroke="var(--ink-soft)"/>';
 
-    // sloupec bez příliš hustých bodů: stačí každý druhý/třetí bod, ale pro plynulost vykreslíme všechny
-    var line = function(key){
+    var line = function(pts, key){
       return pts.map(function(q,i){ return (i?'L':'M') + x(q.t).toFixed(1) + ' ' + y(q[key]).toFixed(1); }).join(' ');
     };
-    var area = line('bal') + ' L' + x(span).toFixed(1) + ' ' + y(0) + ' L' + x(0).toFixed(1) + ' ' + y(0) + ' Z';
-    s += '<path d="'+area+'" fill="var(--accent)" opacity="0.12"/>';
-    s += '<path d="'+line('dep')+'" fill="none" stroke="var(--focus)" stroke-width="2.2" stroke-linejoin="round"/>';
-    s += '<path d="'+line('bal')+'" fill="none" stroke="var(--accent)" stroke-width="2.6" stroke-linejoin="round"/>';
-    s += '<g id="chart-cursor" visibility="hidden"><line id="cur-line" y1="'+MT+'" y2="'+(H-MB)+'" stroke="var(--ink-soft)" stroke-dasharray="3 3"/>'
-       + '<circle id="cur-bal" r="4.5" fill="var(--accent)" stroke="#fff" stroke-width="1.5"/>'
-       + '<circle id="cur-dep" r="4" fill="var(--focus)" stroke="#fff" stroke-width="1.5"/></g>';
+    var main = series[0];
+    if(fill){
+      var area = line(main.pts,'bal') + ' L' + x(span).toFixed(1) + ' ' + y(0) + ' L' + x(0).toFixed(1) + ' ' + y(0) + ' Z';
+      s += '<path d="'+area+'" fill="var(--accent)" opacity="0.12"/>';
+    }
+    s += '<path d="'+line(main.pts,'dep')+'" fill="none" stroke="'+(fill ? 'var(--focus)' : 'var(--ink-soft)')+'" stroke-width="2.2" stroke-linejoin="round"'+(fill ? '' : ' stroke-dasharray="6 4"')+'/>';
+    series.forEach(function(sr){
+      s += '<path d="'+line(sr.pts,'bal')+'" fill="none" stroke="'+sr.color+'" stroke-width="'+sr.w+'" stroke-linejoin="round"/>';
+    });
+    s += '<g id="chart-cursor" visibility="hidden"><line id="cur-line" y1="'+MT+'" y2="'+(H-MB)+'" stroke="var(--ink-soft)" stroke-dasharray="3 3"/>';
+    series.forEach(function(sr,i){ s += '<circle id="cur-dot-'+i+'" r="4.5" fill="'+sr.color+'" stroke="#fff" stroke-width="1.5"/>'; });
+    s += '</g>';
     $('chart').innerHTML = s;
   }
 
   (function wireChartHover(){
-    var svg = $('chart'), tip = $('chart-tip'), box = $('chart-box');
+    var svg = $('chart'), tip = $('chart-tip');
     function hide(){ tip.hidden = true; var c = $('chart-cursor'); if(c) c.setAttribute('visibility','hidden'); }
     function move(e){
       if(!chartData) return;
@@ -639,15 +644,19 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
       var t = (px - ML) / (W-ML-MR) * d.span;
       t = Math.max(0, Math.min(d.span, t));
       var i = Math.round(t * 12);
-      var q = d.pts[Math.min(i, d.pts.length-1)];
-      var cx = d.x(q.t);
+      var first = d.series[0].pts;
+      i = Math.min(i, first.length-1);
+      var cx = d.x(first[i].t);
       var c = $('chart-cursor'); if(!c) return;
       c.setAttribute('visibility','visible');
       $('cur-line').setAttribute('x1', cx); $('cur-line').setAttribute('x2', cx);
-      $('cur-bal').setAttribute('cx', cx); $('cur-bal').setAttribute('cy', d.y(q.bal));
-      $('cur-dep').setAttribute('cx', cx); $('cur-dep').setAttribute('cy', d.y(q.dep));
-      var ageTxt = fmtDec.format(d.startAge + q.t);
-      tip.innerHTML = '<b>Věk ' + ageTxt + '</b><br>Hodnota účtu: ' + kc(q.bal) + '<br>Vloženo: ' + kc(q.dep);
+      var rows = '';
+      d.series.forEach(function(sr,k){
+        var q = sr.pts[i];
+        var dot = $('cur-dot-'+k); dot.setAttribute('cx', cx); dot.setAttribute('cy', d.y(q.bal));
+        rows += '<br><i style="display:inline-block;width:9px;height:9px;border-radius:50%;background:'+sr.color+';border:1.5px solid #fff;margin-right:4px"></i>'+sr.label+': '+kc(q.bal);
+      });
+      tip.innerHTML = '<b>Věk ' + fmtDec.format(d.startAge + first[i].t) + '</b>' + rows + '<br>Vloženo: ' + kc(first[i].dep);
       tip.hidden = false;
       var left = cx / W * rect.width;
       left = Math.max(70, Math.min(rect.width - 70, left));
@@ -686,7 +695,6 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
     $('brand-p').textContent = dip ? 'kalkulačka DIP se složeným úročením' : 'kalkulačka výnosů se složeným úročením';
     $('block-state').hidden = dip;
     $('lab-reinvest').textContent = dip ? 'Každý rok vložit úsporu zpět do DIP' : 'Každý rok vložit úsporu zpět do penzijního spoření';
-    $('lab-dep').textContent = dip ? 'Vloženo' : 'Vloženo (včetně státního příspěvku)';
     $('fee-row').hidden = dip;
     $('fee-slider-wrap').hidden = !dip;
     var feePct = dip ? parseFloat($('fee-slider').value) : S.fee;
@@ -740,7 +748,7 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
     if(err){
       ['res-final','res-own','res-state','res-gain','res-fee','res-tax','res-mult'].forEach(function(id){ $(id).textContent = '—'; });
       $('res-sub').textContent = '';
-      $('chart').innerHTML = ''; chartData = null;
+      $('chart').innerHTML = ''; $('chart-legend').innerHTML = ''; chartData = null;
       document.querySelector('#year-table tbody').innerHTML = '';
       return;
     }
@@ -774,7 +782,25 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
       w.hidden = false;
     } else { w.hidden = true; }
 
-    drawChart(res, startAge, endAge);
+    var base0 = {initial:initial, monthly:monthly, startAge:startAge, endAge:endAge, bonus:b, taxInitial:true, fee: feeOn ? feePct : 0, state:stateOn, taxFree:taxFree, tax: taxOn ? TAX_RATE : 0, reinvest: taxOn && $('sw-reinvest').checked, infl: inflOn ? infl : 0};
+    var depLabel = dip ? 'Vloženo' : 'Vloženo (včetně státního příspěvku)';
+    var legend = '';
+    if($('sw-compare').checked){
+      var series = FUNDS.map(function(f){
+        var r = f.id === S.fund ? res : simulate(Object.assign({}, base0, {fund:f.id}));
+        return {id:f.id, label:f.name === 'Strategie životního cyklu' ? 'Životní cyklus' : f.name, color:FUND_COLORS[f.id], w: f.id === S.fund ? 3.4 : 2.2, pts:r.points, final:r.final};
+      });
+      drawChart(series, startAge, endAge, false);
+      var order = series.slice().sort(function(a,c){ return c.final - a.final; });
+      order.forEach(function(sr){
+        legend += '<span><i style="background:'+sr.color+'"></i>'+sr.label+(sr.id === S.fund ? ' (vybraný)' : '')+': <b>'+kc(sr.final)+'</b></span>';
+      });
+      legend += '<span><i class="dash"></i>'+depLabel+'</span>';
+    } else {
+      drawChart([{label:'Hodnota účtu', color:'var(--accent)', w:2.6, pts:res.points}], startAge, endAge, true);
+      legend = '<span><i style="background:var(--accent)"></i>Hodnota účtu</span><span><i style="background:var(--focus)"></i>'+depLabel+'</span>';
+    }
+    $('chart-legend').innerHTML = legend;
     drawTable(res, S.fund);
   }
 
