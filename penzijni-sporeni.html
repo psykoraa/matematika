@@ -308,8 +308,9 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
         <div class="stat" id="stat-fee"><div class="label">Zaplacené poplatky</div><div class="value" id="res-fee">—</div></div>
         <div class="stat" id="stat-tax" hidden><div class="label" id="lab-tax">Úspora na daních (mimo účet)</div><div class="value" id="res-tax">—</div></div>
         <div class="stat"><div class="label">Násobek vlastních vkladů</div><div class="value" id="res-mult">—</div></div>
-        <div class="stat"><div class="label">Měsíční renta po dobu 10 let</div><div class="value" id="res-rent">—</div></div>
+        <div class="stat"><div class="label" id="lab-rent">Měsíční renta po dobu 10 let</div><div class="value" id="res-rent">—</div></div>
       </div>
+      <div class="row" id="rent-row" role="radiogroup" aria-label="Délka renty" style="margin-top:12px"></div>
       <p class="hint" id="rent-hint" style="margin-top:10px;line-height:1.45"></p>
     </div>
 
@@ -377,8 +378,8 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
       <p>Zobrazený výnos je pak <b>reálný výnos</b>, tedy po odečtení znehodnocení peněz.</p>
 
       <h3>Měsíční renta</h3>
-      <p>Naspořená částka \(Z\) se vyplácí ve 120 stejných měsíčních výplatách \(R\) po dobu 10 let. První výplata je hned po skončení spoření, další vždy na začátku měsíce. Nevyplacená část se během výplat <b>dál zhodnocuje</b> výnosem zvoleného fondu (u strategie životního cyklu po 60. roce konzervativním) a <b>dál se z ní odečítá poplatek za správu</b>, pokud je zapnutý. Označme \(G(d)\) růstový faktor zůstatku po \(d\) dnech výplatního období po započtení výnosu i poplatku (stejně denně jako při spoření). Výplata je pak</p>
-      <div class="formula-box">\[ R = \frac{Z}{\displaystyle\sum_{k=0}^{119} \frac{1}{G(d_k)}} \]</div>
+      <p>Naspořená částka \(Z\) se vyplácí v \(n\) stejných měsíčních výplatách \(R\), kde \(n = 120\) (renta na 10 let) nebo \(n = 240\) (renta na 20 let), délku si zvolíte pod výsledky. První výplata je hned po skončení spoření, další vždy na začátku měsíce. Nevyplacená část se během výplat <b>dál zhodnocuje</b> výnosem zvoleného fondu (u strategie životního cyklu po 60. roce konzervativním) a <b>dál se z ní odečítá poplatek za správu</b>, pokud je zapnutý. Označme \(G(d)\) růstový faktor zůstatku po \(d\) dnech výplatního období po započtení výnosu i poplatku (stejně denně jako při spoření). Výplata je pak</p>
+      <div class="formula-box">\[ R = \frac{Z}{\displaystyle\sum_{k=0}^{n-1} \frac{1}{G(d_k)}} \]</div>
       <p>kde \(d_k\) je den \(k\)-té výplaty. Renta je bez zdanění a při zapnuté inflaci v dnešních cenách (přepočtených k datu konce spoření).</p>
 
       <div class="note">
@@ -404,7 +405,7 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
   var R_DYN = 8, R_KONS = 1.5;
   var CYCLE_FROM = 43, CYCLE_TO = 60;
   var FEES = [0.5, 1];
-  var RENT_MONTHS = 120;                  // měsíční renta po dobu 10 let
+  var RENT_YEARS = [10, 20];              // možné délky měsíční renty (roky)
   var FUND_COLORS = {kons:'#1e6f66', vyv:'#6b5bb5', dyn:'#c9581f', cyk:'#212b34'};
   var STATE_RATE = 0.2, STATE_MIN = 500, STATE_CAP = 1700;
   var TAX_RATE = 15;                      // sazba daně z příjmu v %
@@ -514,12 +515,13 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
   }
 
   /*
-   * Měsíční renta po dobu RENT_MONTHS měsíců z nominální naspořené částky B: nevyplacená část se dál
+   * Měsíční renta po dobu S.rent let z nominální naspořené částky B: nevyplacená část se dál
    * zhodnocuje (denně, výnosem zvoleného fondu v daném věku) a dál se z ní denně odečítá poplatek.
    * První výplata je hned po skončení spoření, další vždy na začátku měsíce. Vrací nominální výplatu.
    */
-  function rentPayment(p, B){
-    var days = Math.round(RENT_MONTHS * DAYS / 12), feeD = p.fee/100/DAYS;
+  function rentPayment(p, B, years){
+    var months = years * 12;
+    var days = Math.round(months * DAYS / 12), feeD = p.fee/100/DAYS;
     var G = new Float64Array(days + 1); G[0] = 1;
     var id = 0;
     for(var d = 0; d < days; d++){
@@ -530,13 +532,13 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
       G[d+1] = G[d] * (1 + id) * (1 - feeD);
     }
     var sum = 0;
-    for(var m = 0; m < RENT_MONTHS; m++) sum += 1 / G[Math.round(m * DAYS / 12)];
+    for(var m = 0; m < months; m++) sum += 1 / G[Math.round(m * DAYS / 12)];
     return B / sum;
   }
 
   // ---------- vstupy ----------
   var $ = function(id){ return document.getElementById(id); };
-  var S = {fund:'cyk', fee:1};
+  var S = {fund:'cyk', fee:1, rent:10};
   var MODE = 'pen';   // 'pen' = penzijní spoření, 'dip' = dlouhodobý investiční produkt
   var FIELDS = ['in-initial','in-monthly','in-start','in-end','in-infl','fee-slider'];
   var SWITCHES = ['sw-fee','sw-state','sw-tax','sw-reinvest','sw-infl','sw-compare'];
@@ -587,6 +589,14 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
 
   function buildChips(){
     renderFundChips();
+    RENT_YEARS.forEach(function(y){
+      var c = document.createElement('button');
+      c.type = 'button'; c.className = 'chip'; c.dataset.years = y;
+      c.setAttribute('role','radio');
+      c.textContent = 'Renta na ' + y + ' let';
+      c.addEventListener('click', function(){ S.rent = y; update(); });
+      $('rent-row').appendChild(c);
+    });
     var er = $('fee-row');
     FEES.forEach(function(v){
       var b = document.createElement('button');
@@ -803,8 +813,12 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
     $('stat-tax').hidden = !taxOn;
     $('lab-tax').textContent = $('sw-reinvest').checked ? 'Úspora na daních (vložena zpět)' : 'Úspora na daních (mimo účet)';
     var base0 = {initial:initial, monthly:monthly, startAge:startAge, endAge:endAge, bonus:b, taxInitial:true, fee: feeOn ? feePct : 0, state:stateOn, taxFree:taxFree, tax: taxOn ? TAX_RATE : 0, reinvest: taxOn && $('sw-reinvest').checked, infl: inflOn ? infl : 0};
-    $('res-rent').textContent = kc(rentPayment(Object.assign({}, base0, {fund:S.fund}), res.nominal) * res.deflEnd);
-    $('rent-hint').textContent = 'Renta = ' + RENT_MONTHS + ' stejných měsíčních výplat (první hned po skončení spoření), během nichž se zbývající částka dál zhodnocuje výnosem zvoleného fondu' + (feeOn ? ' a dál se z ní odečítá poplatek za správu' : '') + '. Bez zdanění' + (inflOn ? ', v dnešních cenách.' : '.');
+    $('lab-rent').textContent = 'Měsíční renta po dobu ' + S.rent + ' let';
+    Array.prototype.forEach.call($('rent-row').children, function(c){
+      var on = parseInt(c.dataset.years, 10) === S.rent; c.classList.toggle('on', on); c.setAttribute('aria-checked', on);
+    });
+    $('res-rent').textContent = kc(rentPayment(Object.assign({}, base0, {fund:S.fund}), res.nominal, S.rent) * res.deflEnd);
+    $('rent-hint').textContent = 'Renta = ' + (S.rent * 12) + ' stejných měsíčních výplat (první hned po skončení spoření), během nichž se zbývající částka dál zhodnocuje výnosem zvoleného fondu' + (feeOn ? ' a dál se z ní odečítá poplatek za správu' : '') + '. Bez zdanění' + (inflOn ? ', v dnešních cenách.' : '.');
     var base = res.own;
     $('res-mult').textContent = base > 0 ? '× ' + new Intl.NumberFormat('cs-CZ',{maximumFractionDigits:2}).format(res.final / base) : '—';
 
