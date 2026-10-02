@@ -289,6 +289,8 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
             <div class="input-wrap"><input id="in-infl" type="text" inputmode="decimal" value="2,5" autocomplete="off"><span class="suffix">% / rok</span></div>
           </div>
           <p class="hint">Všechny částky se pak přepočtou na dnešní kupní sílu koruny.</p>
+          <label class="switch" style="margin-top:10px"><input type="checkbox" id="sw-index"><span class="track"></span>Navyšovat měsíční vklad každý rok o inflaci</label>
+          <p class="hint" id="index-hint"></p>
         </div>
       </div>
     </div>
@@ -376,6 +378,9 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
       <p>Při zapnuté inflaci \(\pi\) se každá částka vzniklá v čase \(t\) (v letech od začátku spoření) přepočte na dnešní ceny:</p>
       <div class="formula-box">\[ \text{částka v dnešních cenách} = \frac{\text{nominální částka}}{(1+\pi)^{t}} \]</div>
       <p>Zobrazený výnos je pak <b>reálný výnos</b>, tedy po odečtení znehodnocení peněz.</p>
+      <p>Volba <b>navyšovat měsíční vklad o inflaci</b> zvýší vklad každý rok: v \(k\)-tém roce spoření (první rok \(k = 0\)) je měsíční vklad</p>
+      <div class="formula-box">\[ V_k = V\,(1+\pi)^{k} \]</div>
+      <p>Reálná hodnota vkladu se tím nemění. Státní příspěvek se počítá z každého nového vkladu zvlášť (strop 1 700 Kč i hranice odpočtu 20 400 Kč ročně zůstávají pevné).</p>
 
       <h3>Měsíční renta</h3>
       <p>Naspořená částka \(Z\) se vyplácí v \(n\) stejných měsíčních výplatách \(R\), kde \(n = 120\) (renta na 10 let) nebo \(n = 240\) (renta na 20 let), délku si zvolíte pod výsledky. První výplata je hned po skončení spoření, další vždy na začátku měsíce. Nevyplacená část se během výplat <b>dál zhodnocuje</b> výnosem zvoleného fondu (u strategie životního cyklu po 60. roce konzervativním) a <b>dál se z ní odečítá poplatek za správu</b>, pokud je zapnutý. Označme \(G(d)\) růstový faktor zůstatku po \(d\) dnech výplatního období po započtení výnosu i poplatku (stejně denně jako při spoření). Výplata je pak</p>
@@ -446,7 +451,7 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
   }
 
   /*
-   * p: {initial, monthly, startAge, endAge, fund, fee (% nebo 0), state (bool), infl (% nebo 0), tax (sazba daně v % nebo 0), reinvest (bool: úspora na dani se vkládá zpět), taxFree (roční vklady, nad které se odečítá), taxInitial (počáteční vklad se počítá do odpočtu), bonus (p. b. k výnosu fondu)}
+   * p: {initial, monthly, startAge, endAge, fund, fee (% nebo 0), state (bool), infl (% nebo 0), tax (sazba daně v % nebo 0), reinvest (bool: úspora na dani se vkládá zpět), indexDep (bool: vklad roste každý rok o inflaci), taxFree (roční vklady, nad které se odečítá), taxInitial (počáteční vklad se počítá do odpočtu), bonus (p. b. k výnosu fondu)}
    * Počítá se po dnech (rok = 365 dní, měsíc = 365/12 dne zaokrouhleno na celé dny).
    * Vrací {years:[...], points:[...], final, own, state, fee, gain}; všechny částky v dnešních cenách,
    * pokud je infl > 0 (jinak nominálně).
@@ -464,7 +469,6 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
     var bal = p.initial;
     var ownR = p.initial, stateR = 0, feeR = 0, taxR = 0, yearContrib = p.taxInitial ? p.initial : 0;
     var stateQ = 0;
-    var stateM = p.state ? stateMonthly(p.monthly) : 0;
     var years = [{age:p.startAge, t:0, bal:p.initial, own:p.initial, state:0, fee:0, taxSaved:0, share:null, r:null}];
     var points = [{t:0, bal:p.initial, dep:p.initial}];
     var yr = null, id = 0, feeD = p.fee/100/DAYS, monthsDone = 0;
@@ -475,10 +479,12 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
         id = Math.pow(1 + yr.r/100, 1/DAYS) - 1;   // denní úroková míra
       }
       if(monthStart[d]){
-        bal += p.monthly;
-        ownR += p.monthly * defl(d);
-        yearContrib += p.monthly;
-        stateQ += stateM;
+        // vklad se případně každý rok navýší o inflaci (první rok je zadaná částka)
+        var dep = (p.indexDep && p.infl > 0) ? p.monthly * Math.pow(1 + p.infl/100, Math.floor(d/DAYS)) : p.monthly;
+        bal += dep;
+        ownR += dep * defl(d);
+        yearContrib += dep;
+        if(p.state) stateQ += stateMonthly(dep);
       }
       bal *= (1 + id);                              // denní připsání výnosu
       var f = bal * feeD;                           // denní poplatek ze zůstatku
@@ -541,7 +547,7 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
   var S = {fund:'cyk', fee:1, rent:10};
   var MODE = 'pen';   // 'pen' = penzijní spoření, 'dip' = dlouhodobý investiční produkt
   var FIELDS = ['in-initial','in-monthly','in-start','in-end','in-infl','fee-slider'];
-  var SWITCHES = ['sw-fee','sw-state','sw-tax','sw-reinvest','sw-infl','sw-compare'];
+  var SWITCHES = ['sw-fee','sw-state','sw-tax','sw-reinvest','sw-infl','sw-index','sw-compare'];
   var saved = {};
   function snapshot(){
     var o = {v:{}, c:{}, fund:S.fund, fee:S.fee};
@@ -769,6 +775,10 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
     else hint = 'Státní příspěvek: 20 % z ' + kc(monthly) + ' = ' + kc(sm) + ' měsíčně, připisuje se čtvrtletně.';
     $('state-hint').textContent = hint;
 
+    var lastDep = monthly * Math.pow(1 + infl/100, Math.max(0, (isNaN(endAge - startAge) ? 1 : endAge - startAge) - 1));
+    $('index-hint').textContent = $('sw-index').checked
+      ? 'První rok vložíte ' + kc(monthly) + ' měsíčně, v posledním roce spoření ' + kc(lastDep) + ' měsíčně (v dnešních cenách pořád ' + kc(monthly) + '). Strop státního příspěvku i hranice daňového odpočtu jsou pevné částky a s inflací se nezvyšují.'
+      : 'Bez navyšování zůstává vklad pořád ' + kc(monthly) + ' měsíčně a jeho reálná hodnota klesá.';
     var taxFree = dip ? 0 : TAX_FREE_YEARLY;
     var yc = monthly * 12, ded = taxDeduction(yc, taxFree), ded1 = taxDeduction(yc + initial, taxFree);
     var firstYear = initial > 0 && ded1 !== ded
@@ -794,7 +804,7 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
 
     var res = simulate({
       initial:initial, monthly:monthly, startAge:startAge, endAge:endAge,
-      fund: S.fund, bonus: b, taxInitial: true, fee: feeOn ? feePct : 0, state: stateOn, taxFree: taxFree, tax: taxOn ? TAX_RATE : 0, reinvest: taxOn && $('sw-reinvest').checked, infl: inflOn ? infl : 0
+      fund: S.fund, bonus: b, taxInitial: true, fee: feeOn ? feePct : 0, state: stateOn, taxFree: taxFree, tax: taxOn ? TAX_RATE : 0, reinvest: taxOn && $('sw-reinvest').checked, infl: inflOn ? infl : 0, indexDep: inflOn && $('sw-index').checked
     });
 
     var years = endAge - startAge;
@@ -812,7 +822,7 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
     $('res-tax').textContent = kc(res.tax);
     $('stat-tax').hidden = !taxOn;
     $('lab-tax').textContent = $('sw-reinvest').checked ? 'Úspora na daních (vložena zpět)' : 'Úspora na daních (mimo účet)';
-    var base0 = {initial:initial, monthly:monthly, startAge:startAge, endAge:endAge, bonus:b, taxInitial:true, fee: feeOn ? feePct : 0, state:stateOn, taxFree:taxFree, tax: taxOn ? TAX_RATE : 0, reinvest: taxOn && $('sw-reinvest').checked, infl: inflOn ? infl : 0};
+    var base0 = {initial:initial, monthly:monthly, startAge:startAge, endAge:endAge, bonus:b, taxInitial:true, fee: feeOn ? feePct : 0, state:stateOn, taxFree:taxFree, tax: taxOn ? TAX_RATE : 0, reinvest: taxOn && $('sw-reinvest').checked, infl: inflOn ? infl : 0, indexDep: inflOn && $('sw-index').checked};
     $('lab-rent').textContent = 'Měsíční renta po dobu ' + S.rent + ' let';
     Array.prototype.forEach.call($('rent-row').children, function(c){
       var on = parseInt(c.dataset.years, 10) === S.rent; c.classList.toggle('on', on); c.setAttribute('aria-checked', on);
