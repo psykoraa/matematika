@@ -308,7 +308,9 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
         <div class="stat" id="stat-fee"><div class="label">Zaplacené poplatky</div><div class="value" id="res-fee">—</div></div>
         <div class="stat" id="stat-tax" hidden><div class="label" id="lab-tax">Úspora na daních (mimo účet)</div><div class="value" id="res-tax">—</div></div>
         <div class="stat"><div class="label">Násobek vlastních vkladů</div><div class="value" id="res-mult">—</div></div>
+        <div class="stat"><div class="label">Měsíční renta po dobu 10 let</div><div class="value" id="res-rent">—</div></div>
       </div>
+      <p class="hint" id="rent-hint" style="margin-top:10px;line-height:1.45"></p>
     </div>
 
     <div class="panel">
@@ -374,6 +376,11 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
       <div class="formula-box">\[ \text{částka v dnešních cenách} = \frac{\text{nominální částka}}{(1+\pi)^{t}} \]</div>
       <p>Zobrazený výnos je pak <b>reálný výnos</b>, tedy po odečtení znehodnocení peněz.</p>
 
+      <h3>Měsíční renta</h3>
+      <p>Měsíční renta po dobu 10 let je jednoduše naspořená částka \(Z\) vydělená počtem výplat:</p>
+      <div class="formula-box">\[ R = \frac{Z}{120} \]</div>
+      <p>Počítá se bez dalšího zhodnocení nevyplacené části, bez poplatků po skončení spoření a bez zdanění. Při zapnuté inflaci je renta v dnešních cenách.</p>
+
       <div class="note">
         <p>Předpoklady: výnosy fondů jsou konstantní průměr (skutečné výnosy kolísají), měsíční vklad se v průběhu let nemění (není indexován inflací) a nezapočítává se zaměstnavatelský příspěvek ani jiné produkty sdílející limit 48 000 Kč. Jde o orientační výpočet, ne o investiční radu.</p>
       </div>
@@ -397,6 +404,7 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
   var R_DYN = 8, R_KONS = 1.5;
   var CYCLE_FROM = 43, CYCLE_TO = 60;
   var FEES = [0.5, 1];
+  var RENT_MONTHS = 120;                  // měsíční renta po dobu 10 let
   var FUND_COLORS = {kons:'#1e6f66', vyv:'#6b5bb5', dyn:'#c9581f', cyk:'#212b34'};
   var STATE_RATE = 0.2, STATE_MIN = 500, STATE_CAP = 1700;
   var TAX_RATE = 15;                      // sazba daně z příjmu v %
@@ -746,7 +754,7 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
     if(infl > 50) err = 'Inflace je nastavena příliš vysoko.';
     setWarn(err);
     if(err){
-      ['res-final','res-own','res-state','res-gain','res-fee','res-tax','res-mult'].forEach(function(id){ $(id).textContent = '—'; });
+      ['res-final','res-own','res-state','res-gain','res-fee','res-tax','res-mult','res-rent'].forEach(function(id){ $(id).textContent = '—'; });
       $('res-sub').textContent = '';
       $('chart').innerHTML = ''; $('chart-legend').innerHTML = ''; chartData = null;
       document.querySelector('#year-table tbody').innerHTML = '';
@@ -773,6 +781,8 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
     $('res-tax').textContent = kc(res.tax);
     $('stat-tax').hidden = !taxOn;
     $('lab-tax').textContent = $('sw-reinvest').checked ? 'Úspora na daních (vložena zpět)' : 'Úspora na daních (mimo účet)';
+    $('res-rent').textContent = kc(res.final / RENT_MONTHS);
+    $('rent-hint').textContent = 'Renta = naspořená částka rozdělená na ' + RENT_MONTHS + ' stejných měsíčních výplat, bez dalšího zhodnocení a bez zdanění' + (inflOn ? ', v dnešních cenách.' : '.');
     var base = res.own;
     $('res-mult').textContent = base > 0 ? '× ' + new Intl.NumberFormat('cs-CZ',{maximumFractionDigits:2}).format(res.final / base) : '—';
 
