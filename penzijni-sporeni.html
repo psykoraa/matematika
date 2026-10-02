@@ -363,10 +363,10 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
       <h3>Daňový odpočet</h3>
       <p>Vklady klienta lze odečíst od základu daně z příjmů, ale <b>jen část nad 1 700 Kč měsíčně</b> (tj. nad 20 400 Kč ročně), protože do této výše už má klient nárok na státní příspěvek. Odpočet je navíc omezen na 48 000 Kč za rok (limit je společný pro všechny daňově podporované produkty spoření na stáří). Při ročních vkladech \(R\) je odpočet a úspora na dani</p>
       <div class="formula-box">\[ O = \min\bigl(48\,000;\ \max(0;\ R - 20\,400)\bigr),\qquad \text{úspora} = O \cdot s \]</div>
-      <p>kde \(s\) je sazba daně z příjmu (v kalkulačce 15 %). Do ročních vkladů \(R\) u penzijního spoření počítám jen pravidelné měsíční vklady (počáteční vklad ne). Úsporu získáte zpět při podání daňového přiznání (nebo ročním zúčtování), proto se v kalkulačce zaznamenává <b>na konci každého roku</b> a do hodnoty účtu se <b>nepřičítá</b>, zobrazuje se zvlášť. Pokud zapnete volbu <b>vložit úsporu zpět</b>, přičte se na konci každého roku k účtu jako další vlastní vklad, který se počítá do vkladů následujícího roku (a tím může odpočet dále zvyšovat). Na tento jednorázový vklad se státní příspěvek nepočítá. Příspěvky zaměstnavatele se do odpočtu nezapočítávají.</p>
+      <p>kde \(s\) je sazba daně z příjmu (v kalkulačce 15 %). Do ročních vkladů \(R\) se v prvním roce počítá i počáteční vklad. Úsporu získáte zpět při podání daňového přiznání (nebo ročním zúčtování), proto se v kalkulačce zaznamenává <b>na konci každého roku</b> a do hodnoty účtu se <b>nepřičítá</b>, zobrazuje se zvlášť. Pokud zapnete volbu <b>vložit úsporu zpět</b>, přičte se na konci každého roku k účtu jako další vlastní vklad, který se počítá do vkladů následujícího roku (a tím může odpočet dále zvyšovat). Na tento jednorázový vklad se státní příspěvek nepočítá. Příspěvky zaměstnavatele se do odpočtu nezapočítávají.</p>
 
       <h3>DIP (dlouhodobý investiční produkt)</h3>
-      <p>Záložka DIP se počítá stejně jako penzijní spoření, ale s těmito rozdíly: nepočítá se <b>státní příspěvek</b>, u každé varianty fondu (konzervativní, vyvážený, dynamický, strategie životního cyklu) je průměrný roční výnos o <b>0,5 procentního bodu vyšší</b> (2 %, 4,5 % a 8,5 %), poplatek za správu lze zvolit posuvníkem od 0,1 % do 0,5 % ročně a daňový odpočet se uplatňuje už <b>od první koruny</b>, včetně počátečního vkladu v prvním roce (platí \(O = \min(48\,000;\ R)\)). U penzijního spoření se do odpočtu počítá jen pravidelný měsíční vklad nad 1 700 Kč. Limit 48 000 Kč za rok je společný se všemi ostatními daňově podporovanými produkty spoření na stáří, takže při souběhu s penzijním spořením se odpočty sčítají a kalkulačka tento souběh nesleduje.</p>
+      <p>Záložka DIP se počítá stejně jako penzijní spoření, ale s těmito rozdíly: nepočítá se <b>státní příspěvek</b>, u každé varianty fondu (konzervativní, vyvážený, dynamický, strategie životního cyklu) je průměrný roční výnos o <b>0,5 procentního bodu vyšší</b> (2 %, 4,5 % a 8,5 %), poplatek za správu lze zvolit posuvníkem od 0,1 % do 0,5 % ročně a daňový odpočet se uplatňuje už <b>od první koruny</b> (platí \(O = \min(48\,000;\ R)\)). U penzijního spoření se odečítá jen část ročních vkladů nad 20 400 Kč (1 700 Kč měsíčně). Limit 48 000 Kč za rok je společný se všemi ostatními daňově podporovanými produkty spoření na stáří, takže při souběhu s penzijním spořením se odpočty sčítají a kalkulačka tento souběh nesleduje.</p>
       <p>Daňová výhoda DIP je podmíněná: prostředky je nutné vybrat nejdříve po <b>10 letech</b> spoření a po dosažení <b>60 let</b>, jinak se uplatněný odpočet dodatečně zdaňuje. Kalkulačka na nesplnění této podmínky upozorní.</p>
 
       <h3>Inflace</h3>
@@ -723,13 +723,13 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
     $('state-hint').textContent = hint;
 
     var taxFree = dip ? 0 : TAX_FREE_YEARLY;
-    var yc = monthly * 12, ded = taxDeduction(yc, taxFree);
-    if(dip) $('tax-hint').textContent = ded > 0
-      ? 'U DIP se odečítá už od první koruny (strop ' + kc(TAX_LIMIT) + ' ročně). Při vkladu ' + kc(monthly) + ' měsíčně je odpočet ' + kc(ded) + ' ročně, tedy úspora ' + kc(ded * TAX_RATE / 100) + ' ročně.' + (initial > 0 ? ' Počáteční vklad se počítá do vkladů prvního roku.' : '')
-      : 'Při měsíčním vkladu ' + kc(monthly) + ' žádný odpočet nevzniká.';
-    else $('tax-hint').textContent = ded > 0
+    var yc = monthly * 12, ded = taxDeduction(yc, taxFree), ded1 = taxDeduction(yc + initial, taxFree);
+    var firstYear = initial > 0 && ded1 !== ded
+      ? ' V prvním roce se počítá i počáteční vklad ' + kc(initial) + ': odpočet ' + kc(ded1) + ', úspora ' + kc(ded1 * TAX_RATE / 100) + '.' : '';
+    if(dip) $('tax-hint').textContent = 'U DIP se odečítá už od první koruny (strop ' + kc(TAX_LIMIT) + ' ročně). Při vkladu ' + kc(monthly) + ' měsíčně je odpočet ' + kc(ded) + ' ročně, tedy úspora ' + kc(ded * TAX_RATE / 100) + ' ročně.' + firstYear;
+    else $('tax-hint').textContent = (ded > 0
       ? 'Odečitatelná je jen část vkladů nad ' + kc(STATE_CAP) + ' měsíčně (' + kc(TAX_FREE_YEARLY) + ' ročně). Při vkladu ' + kc(monthly) + ' měsíčně je odpočet ' + kc(ded) + ' ročně, tedy úspora ' + kc(ded * TAX_RATE / 100) + ' ročně.'
-      : 'Při měsíčním vkladu ' + kc(monthly) + ' žádný odpočet nevzniká — odečítá se jen část vkladů nad ' + kc(STATE_CAP) + ' měsíčně.' + '';
+      : 'Při měsíčním vkladu ' + kc(monthly) + ' žádný odpočet z pravidelných vkladů nevzniká — odečítá se jen část vkladů nad ' + kc(STATE_CAP) + ' měsíčně.') + firstYear;
 
     var err = null;
     if(isNaN(startAge) || isNaN(endAge)) err = 'Zadejte věk na začátku a na konci spoření.';
@@ -747,7 +747,7 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
 
     var res = simulate({
       initial:initial, monthly:monthly, startAge:startAge, endAge:endAge,
-      fund: S.fund, bonus: b, taxInitial: dip, fee: feeOn ? feePct : 0, state: stateOn, taxFree: taxFree, tax: taxOn ? TAX_RATE : 0, reinvest: taxOn && $('sw-reinvest').checked, infl: inflOn ? infl : 0
+      fund: S.fund, bonus: b, taxInitial: true, fee: feeOn ? feePct : 0, state: stateOn, taxFree: taxFree, tax: taxOn ? TAX_RATE : 0, reinvest: taxOn && $('sw-reinvest').checked, infl: inflOn ? infl : 0
     });
 
     var years = endAge - startAge;
