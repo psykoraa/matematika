@@ -377,9 +377,9 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
       <p>Zobrazený výnos je pak <b>reálný výnos</b>, tedy po odečtení znehodnocení peněz.</p>
 
       <h3>Měsíční renta</h3>
-      <p>Měsíční renta po dobu 10 let je jednoduše naspořená částka \(Z\) vydělená počtem výplat:</p>
-      <div class="formula-box">\[ R = \frac{Z}{120} \]</div>
-      <p>Počítá se bez dalšího zhodnocení nevyplacené části, bez poplatků po skončení spoření a bez zdanění. Při zapnuté inflaci je renta v dnešních cenách.</p>
+      <p>Naspořená částka \(Z\) se vyplácí ve 120 stejných měsíčních výplatách \(R\) po dobu 10 let. První výplata je hned po skončení spoření, další vždy na začátku měsíce. Nevyplacená část se během výplat <b>dál zhodnocuje</b> výnosem zvoleného fondu (u strategie životního cyklu po 60. roce konzervativním) a <b>dál se z ní odečítá poplatek za správu</b>, pokud je zapnutý. Označme \(G(d)\) růstový faktor zůstatku po \(d\) dnech výplatního období po započtení výnosu i poplatku (stejně denně jako při spoření). Výplata je pak</p>
+      <div class="formula-box">\[ R = \frac{Z}{\displaystyle\sum_{k=0}^{119} \frac{1}{G(d_k)}} \]</div>
+      <p>kde \(d_k\) je den \(k\)-té výplaty. Renta je bez zdanění a při zapnuté inflaci v dnešních cenách (přepočtených k datu konce spoření).</p>
 
       <div class="note">
         <p>Předpoklady: výnosy fondů jsou konstantní průměr (skutečné výnosy kolísají), měsíční vklad se v průběhu let nemění (není indexován inflací) a nezapočítává se zaměstnavatelský příspěvek ani jiné produkty sdílející limit 48 000 Kč. Jde o orientační výpočet, ne o investiční radu.</p>
@@ -510,7 +510,28 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
       }
     }
     var fin = bal * defl(total);
-    return {years:years, points:points, final:fin, own:ownR, state:stateR, fee:feeR, tax:taxR, gain:fin-ownR-stateR};
+    return {nominal:bal, deflEnd:defl(total), years:years, points:points, final:fin, own:ownR, state:stateR, fee:feeR, tax:taxR, gain:fin-ownR-stateR};
+  }
+
+  /*
+   * Měsíční renta po dobu RENT_MONTHS měsíců z nominální naspořené částky B: nevyplacená část se dál
+   * zhodnocuje (denně, výnosem zvoleného fondu v daném věku) a dál se z ní denně odečítá poplatek.
+   * První výplata je hned po skončení spoření, další vždy na začátku měsíce. Vrací nominální výplatu.
+   */
+  function rentPayment(p, B){
+    var days = Math.round(RENT_MONTHS * DAYS / 12), feeD = p.fee/100/DAYS;
+    var G = new Float64Array(days + 1); G[0] = 1;
+    var id = 0;
+    for(var d = 0; d < days; d++){
+      if(d % DAYS === 0){
+        var yr = yearReturn(p.fund, p.endAge + d/DAYS, p.bonus);
+        id = Math.pow(1 + yr.r/100, 1/DAYS) - 1;
+      }
+      G[d+1] = G[d] * (1 + id) * (1 - feeD);
+    }
+    var sum = 0;
+    for(var m = 0; m < RENT_MONTHS; m++) sum += 1 / G[Math.round(m * DAYS / 12)];
+    return B / sum;
   }
 
   // ---------- vstupy ----------
@@ -781,8 +802,9 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
     $('res-tax').textContent = kc(res.tax);
     $('stat-tax').hidden = !taxOn;
     $('lab-tax').textContent = $('sw-reinvest').checked ? 'Úspora na daních (vložena zpět)' : 'Úspora na daních (mimo účet)';
-    $('res-rent').textContent = kc(res.final / RENT_MONTHS);
-    $('rent-hint').textContent = 'Renta = naspořená částka rozdělená na ' + RENT_MONTHS + ' stejných měsíčních výplat, bez dalšího zhodnocení a bez zdanění' + (inflOn ? ', v dnešních cenách.' : '.');
+    var base0 = {initial:initial, monthly:monthly, startAge:startAge, endAge:endAge, bonus:b, taxInitial:true, fee: feeOn ? feePct : 0, state:stateOn, taxFree:taxFree, tax: taxOn ? TAX_RATE : 0, reinvest: taxOn && $('sw-reinvest').checked, infl: inflOn ? infl : 0};
+    $('res-rent').textContent = kc(rentPayment(Object.assign({}, base0, {fund:S.fund}), res.nominal) * res.deflEnd);
+    $('rent-hint').textContent = 'Renta = ' + RENT_MONTHS + ' stejných měsíčních výplat (první hned po skončení spoření), během nichž se zbývající částka dál zhodnocuje výnosem zvoleného fondu' + (feeOn ? ' a dál se z ní odečítá poplatek za správu' : '') + '. Bez zdanění' + (inflOn ? ', v dnešních cenách.' : '.');
     var base = res.own;
     $('res-mult').textContent = base > 0 ? '× ' + new Intl.NumberFormat('cs-CZ',{maximumFractionDigits:2}).format(res.final / base) : '—';
 
@@ -792,7 +814,6 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
       w.hidden = false;
     } else { w.hidden = true; }
 
-    var base0 = {initial:initial, monthly:monthly, startAge:startAge, endAge:endAge, bonus:b, taxInitial:true, fee: feeOn ? feePct : 0, state:stateOn, taxFree:taxFree, tax: taxOn ? TAX_RATE : 0, reinvest: taxOn && $('sw-reinvest').checked, infl: inflOn ? infl : 0};
     var depLabel = dip ? 'Vloženo' : 'Vloženo (včetně státního příspěvku)';
     var legend = '';
     if($('sw-compare').checked){
@@ -846,7 +867,7 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
   }
 
   // pro ověření výpočtů v konzoli / testech
-  window.__penzijni = {simulate:simulate, dynShare:dynShare};
+  window.__penzijni = {simulate:simulate, dynShare:dynShare, rentPayment:rentPayment};
 })();
 </script>
 
