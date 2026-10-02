@@ -332,12 +332,12 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
         <div class="theory-table-wrap">
           <table class="theory-table" id="year-table">
             <thead><tr>
-              <th>Věk</th><th>Dynamický podíl</th><th>Roční výnos</th><th>Vlastní vklady</th><th>Státní příspěvek</th><th>Poplatky</th><th>Daňová úspora</th><th>Hodnota účtu</th>
+              <th>Věk</th><th>Složení D / V / K (%)</th><th>Roční výnos</th><th>Vlastní vklady</th><th>Státní příspěvek</th><th>Poplatky</th><th>Daňová úspora</th><th>Hodnota účtu</th>
             </tr></thead>
             <tbody></tbody>
           </table>
         </div>
-        <p class="hint">Hodnoty jsou vždy na konci daného roku spoření (věk = dosažený věk). Sloupce „Roční výnos“ a „Dynamický podíl“ platí pro rok, který právě skončil.</p>
+        <p class="hint">Hodnoty jsou vždy na konci daného roku spoření (věk = dosažený věk). Sloupce „Roční výnos“ a „Složení“ platí pro rok, který právě skončil (D = dynamický, V = vyvážený, K = konzervativní fond).</p>
       </details>
     </div>
   </div>
@@ -353,9 +353,37 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
       <p>Roční výnos \(i_r\) je průměrný výnos fondu (konzervativní 1,5 %, vyvážený 4 %, dynamický 8 %). Vklady se přičítají k zůstatku v den vkladu. Výnosy se neustále připisují ke zůstatku, takže se úročí i dřívější výnosy (<b>složené úročení</b>).</p>
 
       <h3>Strategie životního cyklu</h3>
-      <p>Do 43 let je celý zůstatek v dynamickém fondu. Od 43 do 60 let se každý rok přesune rovnoměrně část investic do konzervativního fondu, takže v 60 letech je vše v konzervativním fondu. Podíl dynamického fondu v roce, který začíná v těchto letech věku \(a\), je</p>
-      <div class="formula-box">\[ p(a) = \frac{60 - a}{17}\qquad (43 \le a \le 60) \]</div>
-      <p>Roční výnos je pak vážený průměr \( i_r = p\cdot 8\,\% + (1-p)\cdot 1{,}5\,\% \). Pro \(a \le 43\) je \(p = 1\), pro \(a \ge 60\) je \(p = 0\). Přesun se provádí s celým dosavadním zůstatkem, ne jen s novými vklady.</p>
+      <p>Strategie vychází z pravidel ČSOB a platí stejně u penzijního spoření i u DIP. Do 43 let je celý zůstatek v dynamickém fondu. Od 43. narozenin se složení portfolia mění jednou ročně (vždy o narozeninách) ve třech fázích:</p>
+      <p><b>1. fáze (43–50 let):</b> přesun z dynamického do vyváženého fondu, o 10 bodů ročně, konzervativní fond je zatím nulový.<br>
+      <b>2. fáze (51–54 let):</b> pomalé přechodné období. Dynamický fond se doprodává (o 5 bodů ročně), vyvážený roste o 1 bod a konzervativní fond začíná, jen o 4 body ročně.<br>
+      <b>3. fáze (55–60 let):</b> rychlý přesun z vyváženého do konzervativního fondu, o 14 bodů ročně. V 60 letech je vše konzervativní.</p>
+      <div class="theory-table-wrap"><table class="theory-table">
+        <thead><tr><th>Věk</th><th>Dynamický</th><th>Vyvážený</th><th>Konzervativní</th></tr></thead>
+        <tbody>
+          <tr><td>do 42</td><td>100 %</td><td>0 %</td><td>0 %</td></tr>
+          <tr><td>43</td><td>90 %</td><td>10 %</td><td>0 %</td></tr>
+          <tr><td>44</td><td>80 %</td><td>20 %</td><td>0 %</td></tr>
+          <tr><td>45</td><td>70 %</td><td>30 %</td><td>0 %</td></tr>
+          <tr><td>46</td><td>60 %</td><td>40 %</td><td>0 %</td></tr>
+          <tr><td>47</td><td>50 %</td><td>50 %</td><td>0 %</td></tr>
+          <tr><td>48</td><td>40 %</td><td>60 %</td><td>0 %</td></tr>
+          <tr><td>49</td><td>30 %</td><td>70 %</td><td>0 %</td></tr>
+          <tr><td>50</td><td>20 %</td><td>80 %</td><td>0 %</td></tr>
+          <tr><td>51</td><td>15 %</td><td>81 %</td><td>4 %</td></tr>
+          <tr><td>52</td><td>10 %</td><td>82 %</td><td>8 %</td></tr>
+          <tr><td>53</td><td>5 %</td><td>83 %</td><td>12 %</td></tr>
+          <tr><td>54</td><td>0 %</td><td>84 %</td><td>16 %</td></tr>
+          <tr><td>55</td><td>0 %</td><td>70 %</td><td>30 %</td></tr>
+          <tr><td>56</td><td>0 %</td><td>56 %</td><td>44 %</td></tr>
+          <tr><td>57</td><td>0 %</td><td>42 %</td><td>58 %</td></tr>
+          <tr><td>58</td><td>0 %</td><td>28 %</td><td>72 %</td></tr>
+          <tr><td>59</td><td>0 %</td><td>14 %</td><td>86 %</td></tr>
+          <tr><td>60 a více</td><td>0 %</td><td>0 %</td><td>100 %</td></tr>
+        </tbody>
+      </table></div>
+      <p>Tabulka platí pro rok, který začíná daným věkem. Roční výnos je pak vážený průměr výnosů fondů (dynamický, vyvážený a konzervativní podle podílů \(p_D, p_V, p_K\)):</p>
+      <div class="formula-box">\[ i_r = p_D\cdot 8\,\% + p_V\cdot 4\,\% + p_K\cdot 1{,}5\,\% \]</div>
+      <p>U DIP je každý z výnosů o 0,5 procentního bodu vyšší. Přesun se provádí s celým dosavadním zůstatkem, ne jen s novými vklady.</p>
 
       <h3>Poplatek za správu</h3>
       <p>Poplatek se odečítá <b>každý den</b> z aktuálního zůstatku ve výši \(1/365\) ročního poplatku (0,5 % nebo 1 % ročně).</p>
@@ -407,7 +435,7 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
     {id:'dyn',  name:'Dynamický',      rate:8},
     {id:'cyk',  name:'Strategie životního cyklu', rate:null}
   ];
-  var R_DYN = 8, R_KONS = 1.5;
+  var R_DYN = 8, R_BAL = 4, R_KONS = 1.5;
   var CYCLE_FROM = 43, CYCLE_TO = 60;
   var FEES = [0.5, 1];
   var RENT_YEARS = [10, 20];              // možné délky měsíční renty (roky)
@@ -430,20 +458,30 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
   var fmtPct = new Intl.NumberFormat('cs-CZ', {maximumFractionDigits:1});
 
   // ---------- model (čistá funkce) ----------
-  function dynShare(age){
-    if(age <= CYCLE_FROM) return 1;
-    if(age >= CYCLE_TO) return 0;
-    return (CYCLE_TO - age) / (CYCLE_TO - CYCLE_FROM);
+  // Strategie životního cyklu (podle pravidel ČSOB). Složení portfolia (v %) v roce, který začíná
+  // v den, kdy je klientovi `age` let. Každý rok od 43. narozenin se podíly přesunou o pevný počet bodů:
+  //   43–50 let: dynamický -> vyvážený, o 10 bodů ročně (konzervativní zatím 0),
+  //   51–54 let: dynamický se doprodává (-5), vyvážený +1, konzervativní +4 body ročně,
+  //   55–60 let: vyvážený -> konzervativní, o 14 bodů ročně (v 60 letech je vše konzervativní).
+  function lifeAlloc(age){
+    var d = 100, v = 0, k = 0;
+    if(age < CYCLE_FROM) return {d:1, v:0, k:0};
+    for(var a = CYCLE_FROM; a <= Math.min(age, CYCLE_TO); a++){
+      if(a <= 50){ d -= 10; v += 10; }
+      else if(a <= 54){ d -= 5; v += 1; k += 4; }
+      else { v -= 14; k += 14; }
+    }
+    return {d:d/100, v:v/100, k:k/100};
   }
 
-  // Roční výnos (v %) a podíl dynamického fondu pro dané fondové nastavení a věk.
+  // Roční výnos (v %) a složení portfolia (podíly dynamického, vyváženého a konzervativního fondu).
   function yearReturn(fund, age, bonus){
     bonus = bonus || 0;
-    if(fund === 'kons') return {r:R_KONS + bonus, share:0};
-    if(fund === 'vyv')  return {r:4 + bonus, share:null};
-    if(fund === 'dyn')  return {r:R_DYN + bonus, share:1};
-    var w = dynShare(age);
-    return {r: w*(R_DYN + bonus) + (1-w)*(R_KONS + bonus), share:w};
+    if(fund === 'kons') return {r:R_KONS + bonus, alloc:{d:0, v:0, k:1}};
+    if(fund === 'vyv')  return {r:4 + bonus, alloc:{d:0, v:1, k:0}};
+    if(fund === 'dyn')  return {r:R_DYN + bonus, alloc:{d:1, v:0, k:0}};
+    var w = lifeAlloc(age);
+    return {r: w.d*(R_DYN + bonus) + w.v*(R_BAL + bonus) + w.k*(R_KONS + bonus), alloc:w};
   }
 
   function stateMonthly(monthly){
@@ -469,7 +507,7 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
     var bal = p.initial;
     var ownR = p.initial, stateR = 0, feeR = 0, taxR = 0, yearContrib = p.taxInitial ? p.initial : 0;
     var stateQ = 0;
-    var years = [{age:p.startAge, t:0, bal:p.initial, own:p.initial, state:0, fee:0, taxSaved:0, share:null, r:null}];
+    var years = [{age:p.startAge, t:0, bal:p.initial, own:p.initial, state:0, fee:0, taxSaved:0, alloc:null, r:null}];
     var points = [{t:0, bal:p.initial, dep:p.initial}];
     var yr = null, id = 0, feeD = p.fee/100/DAYS, monthsDone = 0;
 
@@ -513,7 +551,7 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
         points.push({t:monthsDone/12, bal:bal*dd, dep:ownR+stateR});
       }
       if((d+1) % DAYS === 0){
-        years.push({age:p.startAge + (d+1)/DAYS, t:(d+1)/DAYS, bal:bal*dd, own:ownR, state:stateR, fee:feeR, taxSaved:taxR, share:yr.share, r:yr.r});
+        years.push({age:p.startAge + (d+1)/DAYS, t:(d+1)/DAYS, bal:bal*dd, own:ownR, state:stateR, fee:feeR, taxSaved:taxR, alloc:yr.alloc, r:yr.r});
       }
     }
     var fin = bal * defl(total);
@@ -718,8 +756,7 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
     var tb = document.querySelector('#year-table tbody');
     var rows = '';
     res.years.slice(1).forEach(function(y){
-      var share = fund === 'vyv' ? '—' : (y.share === null ? '—' : fmtNum.format(Math.round(y.share*100)) + ' %');
-      if(fund === 'kons') share = '0 %';
+      var share = Math.round(y.alloc.d*100) + ' / ' + Math.round(y.alloc.v*100) + ' / ' + Math.round(y.alloc.k*100);
       rows += '<tr><td>' + y.age + '</td><td>' + share + '</td><td>' + fmtPct.format(Math.round(y.r*100)/100).replace(/\.0+$/,'') + ' %</td>'
             + '<td>' + fmtNum.format(Math.round(y.own)) + '</td><td>' + fmtNum.format(Math.round(y.state)) + '</td>'
             + '<td>' + fmtNum.format(Math.round(y.fee)) + '</td><td>' + fmtNum.format(Math.round(y.taxSaved)) + '</td><td><b>' + fmtNum.format(Math.round(y.bal)) + '</b></td></tr>';
@@ -757,7 +794,7 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
     });
     var b = dip ? DIP_BONUS : 0;
     $('fund-hint').textContent = S.fund === 'cyk'
-      ? 'Do ' + CYCLE_FROM + ' let celý zůstatek v dynamickém fondu (' + fmtPct.format(R_DYN + b) + ' %), od ' + CYCLE_FROM + ' do ' + CYCLE_TO + ' let se každý rok rovnoměrně přesouvá do konzervativního (' + fmtPct.format(R_KONS + b) + ' %), od ' + CYCLE_TO + ' let je vše konzervativní.'
+      ? 'Do ' + CYCLE_FROM + ' let je vše v dynamickém fondu (' + fmtPct.format(R_DYN + b) + ' %). Od ' + CYCLE_FROM + ' do 50 let se každý rok přesune 10 % z dynamického do vyváženého (' + fmtPct.format(R_BAL + b) + ' %), od 51 do 54 let se dynamický doprodává a konzervativní (' + fmtPct.format(R_KONS + b) + ' %) roste o 4 body ročně, od 55 do ' + CYCLE_TO + ' let se každý rok přesune 14 % z vyváženého do konzervativního. V ' + CYCLE_TO + ' letech je vše konzervativní.'
       : (dip ? 'Průměrné roční výnosy DIP jsou u každé varianty o ' + fmtPct.format(DIP_BONUS) + ' p. b. vyšší než u penzijního spoření.' : '');
 
     var initial = parseNum($('in-initial').value), monthly = parseNum($('in-monthly').value);
@@ -891,7 +928,7 @@ details.table-details summary:focus-visible{ outline:2px solid var(--focus); out
   }
 
   // pro ověření výpočtů v konzoli / testech
-  window.__penzijni = {simulate:simulate, dynShare:dynShare, rentPayment:rentPayment};
+  window.__penzijni = {simulate:simulate, lifeAlloc:lifeAlloc, rentPayment:rentPayment};
 })();
 </script>
 
