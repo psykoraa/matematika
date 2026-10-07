@@ -94,6 +94,7 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
 .vocab-controls{ display:flex; flex-wrap:wrap; gap:14px 18px; align-items:flex-end; margin-bottom:12px; }
 .vocab-controls .field{ flex:1 1 240px; max-width:360px; }
 #vocab-out{ margin-top:14px; }
+.vocab-open{ margin:4px 0 12px; }
 .vocab-sum{ font-size:0.9rem; line-height:1.6; margin:0 0 8px; }
 .vocab-sum b{ font-family:'IBM Plex Mono', monospace; }
 .vocab-note{ font-size:0.84rem; color:var(--danger); margin:0 0 8px; }
@@ -747,6 +748,10 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
       merges.push({a: ab[0], b: ab[1], sym: sym, count: bestCount, dup: dup});
     }
 
+    // slovník tokenů: nejdřív jednotlivé znaky, pak sloučené symboly v pořadí vzniku
+    var tokens = initial.slice();
+    merges.forEach(function(mg){ if(!mg.dup) tokens.push(mg.sym); });
+
     // výpis
     var sum = el('p', 'vocab-sum');
     sum.appendChild(document.createTextNode('Slovník má '));
@@ -755,6 +760,13 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
     sum.appendChild(el('b', '', String(order.length)));
     sum.appendChild(document.createTextNode(' různých slov.'));
     vocabOut.appendChild(sum);
+    var openBtn = el('button', 'btn primary', 'Zobrazit slovník tokenů');
+    openBtn.type = 'button';
+    openBtn.id = 'btn-vocab-open';
+    openBtn.addEventListener('click', function(){ openTokenPage(tokens, target, cs); });
+    var openRow = el('div', 'vocab-open');
+    openRow.appendChild(openBtn);
+    vocabOut.appendChild(openRow);
     if(exhausted){
       vocabOut.appendChild(el('p', 'vocab-note', 'Slovník nelze zvětšit na ' + target + ': všechna slova už jsou jediným symbolem.'));
     }
@@ -787,6 +799,22 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
       vocabOut.appendChild(wrap);
     }
   }
+  // samostatná stránka se slovníkem tokenů; data se předávají přes localStorage
+  function openTokenPage(tokens, target, cs){
+    var note = document.getElementById('vocab-open-note');
+    if(note) note.remove();
+    try{
+      localStorage.setItem('matematika:bpe-slovnik', JSON.stringify({tokens: tokens, target: target, caseSensitive: cs}));
+    }catch(e){
+      var row = document.querySelector('.vocab-open');
+      var msg = el('p', 'vocab-note', 'Prohlížeč nepovolil uložit slovník pro novou stránku.');
+      msg.id = 'vocab-open-note';
+      row.appendChild(msg);
+      return;
+    }
+    window.open('slovnik-tokenu.html', '_blank');
+  }
+
   document.getElementById('btn-vocab').addEventListener('click', buildVocab);
   vocabIn.addEventListener('keydown', function(e){
     if(e.key === 'Enter'){ e.preventDefault(); buildVocab(); }
