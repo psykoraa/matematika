@@ -95,6 +95,9 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
 .vocab-controls .field{ flex:1 1 240px; max-width:360px; }
 .vocab-out{ margin-top:14px; }
 .vocab-open{ margin:4px 0 12px; }
+.split-note{ margin-top:8px; font-size:0.84rem; color:var(--ink-soft); }
+.split-list{ margin:4px 0 0; padding-left:20px; font-size:0.9rem; line-height:1.7; color:var(--ink); }
+.split-list b{ font-family:'IBM Plex Mono', monospace; }
 .vocab-sum{ font-size:0.9rem; line-height:1.6; margin:0 0 8px; }
 .vocab-sum b{ font-family:'IBM Plex Mono', monospace; }
 .vocab-note{ font-size:0.84rem; color:var(--danger); margin:0 0 8px; }
@@ -526,9 +529,11 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
     var article = document.getElementById('clanek' + sfx);
     var caseIn = document.getElementById('in-case' + sfx);
     var fields = [
-      {input: document.getElementById('in-find-a' + sfx), out: document.getElementById('find-result-a' + sfx), cls: 'hl-a'},
-      {input: document.getElementById('in-find-b' + sfx), out: document.getElementById('find-result-b' + sfx), cls: 'hl-b'}
+      {input: document.getElementById('in-find-a' + sfx), out: document.getElementById('find-result-a' + sfx), cls: 'hl-a'}
     ];
+    if(mode !== 'wp'){   // WordPiece má jen jedno políčko
+      fields.push({input: document.getElementById('in-find-b' + sfx), out: document.getElementById('find-result-b' + sfx), cls: 'hl-b'});
+    }
 
     function clearMarks(){
       var marks = article.querySelectorAll('mark.hl');
@@ -587,12 +592,13 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
       clearMarks();
       var cs = caseIn.checked;
       var totals = [0, 0];
+      var splitCounts = null;   // WordPiece: počty částí, ze kterých řada vzniká sloučením dvou tokenů
       var needles = fields.map(function(f){
         sanitize(f.input);
         var q = f.input.value;
         return q ? (cs ? q : lower(q)) : '';
       });
-      if(!needles[0] && !needles[1]){
+      if(!needles.some(function(n){ return n; })){
         fields.forEach(function(f){ f.out.textContent = 'Zadejte písmeno nebo skupinu písmen.'; });
         return;
       }
@@ -602,6 +608,19 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
         var starts = [];
         nodes.forEach(function(n){ starts.push(full.length); full += n.nodeValue; });
         var hay = cs ? full : lower(full);
+        if(mode === 'wp' && needles[0].length > 1){
+          if(!splitCounts){
+            splitCounts = Object.create(null);
+            for(var cut = 1; cut < needles[0].length; cut++){
+              splitCounts[needles[0].slice(0, cut)] = 0;
+              splitCounts[needles[0].slice(cut)] = 0;
+            }
+          }
+          Object.keys(splitCounts).forEach(function(part){
+            var at = hay.indexOf(part);
+            while(at >= 0){ splitCounts[part]++; at = hay.indexOf(part, at + 1); }
+          });
+        }
         var mask = null;   // mask[i]: bit 0 = výskyt prvního políčka, bit 1 = druhého
         needles.forEach(function(needle, k){
           if(!needle) return;
@@ -646,8 +665,37 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
         var bs = f.out.querySelectorAll('b');
         bs[0].textContent = q;
         bs[1].textContent = String(totals[k]);
+        if(mode === 'wp') renderSplits(f.out, q, splitCounts || Object.create(null));
       });
     }
+
+    // WordPiece: počty všech dvojic částí, jejichž sloučením může řada vzniknout
+    function renderSplits(out, q, counts){
+      var needle = cs0() ? q : lower(q);
+      if(needle.length < 2){
+        out.appendChild(el('div', 'split-note', 'Jeden znak nevzniká sloučením, nemá se na co rozložit.'));
+        return;
+      }
+      out.appendChild(el('div', 'split-note', 'Vznik sloučením dvou tokenů:'));
+      var list = el('ul', 'split-list');
+      for(var cut = 1; cut < needle.length; cut++){
+        var left = needle.slice(0, cut);
+        var right = needle.slice(cut);
+        var li = el('li');
+        li.appendChild(document.createTextNode('„'));
+        li.appendChild(el('b', '', left));
+        li.appendChild(document.createTextNode('“ + „'));
+        li.appendChild(el('b', '', right));
+        li.appendChild(document.createTextNode('“:  #(' + left + ') = '));
+        li.appendChild(el('b', '', String(counts[left])));
+        li.appendChild(document.createTextNode('×,  #(' + right + ') = '));
+        li.appendChild(el('b', '', String(counts[right])));
+        li.appendChild(document.createTextNode('×'));
+        list.appendChild(li);
+      }
+      out.appendChild(list);
+    }
+    function cs0(){ return caseIn.checked; }
     fields.forEach(function(f){
       f.out.textContent = 'Zadejte písmeno nebo skupinu písmen.';
       f.input.addEventListener('input', highlight);
@@ -861,6 +909,12 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
   Array.prototype.forEach.call(wpClone.querySelectorAll('label[for]'), function(e){
     e.setAttribute('for', e.getAttribute('for') + '-wp');
   });
+  var fieldB = wpClone.querySelector('#in-find-b-wp').closest('.field');
+  fieldB.parentNode.removeChild(fieldB);
+  wpClone.querySelector('label[for="in-find-a-wp"]').lastChild.textContent = 'Řada písmen';
+  wpClone.querySelector('.finder .hint').textContent =
+    'Hledá se jen uvnitř jednoho slova (slovo = souvislá řada písmen a číslic; mezery a interpunkci nelze zadat). Překrývající se výskyty se počítají všechny. ' +
+    'Pod počtem se vypíše i počet všech částí, ze kterých může řada vzniknout sloučením dvou tokenů, např. pro „abc“ jsou to dvojice „a“ + „bc“ a „ab“ + „c“.';
   wpClone.querySelector('#vocab-panel-wp .panel-title').textContent = 'Slovník WordPiece';
   wpClone.querySelector('#vocab-panel-wp > .hint').textContent =
     'Korpusem je text článku níže; slova jsou souvislé řady písmen a číslic. Začíná se slovníkem jednotlivých znaků. ' +
