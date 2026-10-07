@@ -134,6 +134,7 @@ mark.hl{ background:rgba(201,88,31,0.32); color:inherit; border-radius:2px; padd
       </div>
       <label class="check"><input type="checkbox" id="in-case" checked> rozlišovat velká a malá písmena</label>
       <div class="find-result" id="find-result" aria-live="polite">Zadejte písmeno nebo skupinu písmen.</div>
+      <div class="hint">Překrývající se výskyty se počítají všechny (např. „aa“ v „aaa“ je 2×).</div>
     </div>
 
     <div id="clanek" lang="en">
@@ -528,10 +529,17 @@ mark.hl{ background:rgba(201,88,31,0.32); color:inherit; border-radius:2px; padd
       var pos = hay.indexOf(needle);
       while(pos >= 0){
         found.push(pos);
-        pos = hay.indexOf(needle, pos + needle.length);
+        pos = hay.indexOf(needle, pos + 1);   // i překrývající se výskyty ("aa" v "aaa" = 2×)
       }
       if(!found.length) return;
       total += found.length;
+      // zvýrazněné úseky: překrývající se výskyty se sloučí do jednoho
+      var spans = [];
+      found.forEach(function(f){
+        var end = f + needle.length;
+        if(spans.length && f <= spans[spans.length - 1][1]) spans[spans.length - 1][1] = end;
+        else spans.push([f, end]);
+      });
       nodes.forEach(function(node, k){
         var nStart = starts[k];
         var nEnd = nStart + node.nodeValue.length;
@@ -539,9 +547,9 @@ mark.hl{ background:rgba(201,88,31,0.32); color:inherit; border-radius:2px; padd
         var frag = document.createDocumentFragment();
         var last = 0;
         var changed = false;
-        found.forEach(function(f){
-          var a = Math.max(f, nStart) - nStart;
-          var b = Math.min(f + needle.length, nEnd) - nStart;
+        spans.forEach(function(sp){
+          var a = Math.max(sp[0], nStart) - nStart;
+          var b = Math.min(sp[1], nEnd) - nStart;
           if(b <= a) return;
           if(a > last) frag.appendChild(document.createTextNode(text.slice(last, a)));
           var m = document.createElement('mark');
