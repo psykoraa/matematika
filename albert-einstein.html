@@ -548,6 +548,8 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
     });
   });
 
+  var instances = [];   // tři nastavení (BPE, WordPiece, SentencePiece)
+
   function setupTokenizer(sfx, mode){
     // ---------- hledání a zvýraznění v textu ----------
     // sfx: přípona id ('' pro BPE, '-wp' pro WordPiece, '-sp' pro SentencePiece)
@@ -749,11 +751,15 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
 
     // text článku je při načtení schovaný; hledání a slovník s ním pracují i tak
     var articleBtn = document.getElementById('btn-article' + sfx);
+    var articleName = 'text o Albertu Einsteinovi';
+    var articleHTML = article.innerHTML;   // původní text článku (před přidáním sbalovacích panelů)
+    function setArticleBtn(){
+      articleBtn.setAttribute('aria-expanded', article.hidden ? 'false' : 'true');
+      articleBtn.textContent = (article.hidden ? 'Zobrazit' : 'Skrýt') + ' ' + articleName;
+    }
     articleBtn.addEventListener('click', function(){
-      var show = article.hidden;
-      article.hidden = !show;
-      articleBtn.setAttribute('aria-expanded', show ? 'true' : 'false');
-      articleBtn.textContent = (show ? 'Skrýt' : 'Zobrazit') + ' text o Albertu Einsteinovi';
+      article.hidden = !article.hidden;
+      setArticleBtn();
     });
 
     // ---------- slovník BPE ----------
@@ -788,6 +794,7 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
       }
       var target = parseInt(v, 10);
       var cs = caseIn.checked;
+      if(window.llmTrain){ trainNative(target, cs); return; }   // program v počítači: rychlý výpočet
 
       // 1. korpus: slova a jejich četnosti (v pořadí prvního výskytu)
       var freq = Object.create(null);
@@ -889,13 +896,42 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
       // slovník tokenů: nejdřív jednotlivé znaky, pak sloučené symboly v pořadí vzniku
       var tokens = initial.slice();
       merges.forEach(function(mg){ if(!mg.dup) tokens.push(mg.sym); });
+      showVocab(target, cs, initial, order.length, merges, tokens, exhausted);
+    }
 
-      // výpis
+    // Program v počítači (window.llmTrain) počítá slovník rychle sám; stránka mu pošle text
+    // po blocích a výsledek vypíše stejně jako při výpočtu v prohlížeči.
+    function trainNative(target, cs){
+      var lines = textGroups().map(function(nodes){
+        var t = '';
+        nodes.forEach(function(n){ t += n.nodeValue; });
+        return t.replace(/[\r\n]+/g, ' ');
+      });
+      var note = el('p', 'vocab-note', 'Počítám…');
+      vocabOut.appendChild(note);
+      window.llmTrain({text: lines.join('\n'), algo: typeName, size: target, ignoreCase: !cs}, function(res){
+        vocabOut.innerHTML = '';
+        if(!res){
+          vocabOut.appendChild(el('p', 'vocab-note', 'Spojení s programem se přerušilo. Spusťte program znovu.'));
+        } else if(res.error === 'nowords'){
+          vocabOut.appendChild(el('p', 'vocab-note', 'V textu nejsou žádná slova.'));
+        } else if(res.error === 'toosmall'){
+          vocabOut.appendChild(el('p', 'vocab-note', 'Slovník jednotlivých znaků má už ' + res.chars + ' symbolů. Zadejte alespoň toto číslo.'));
+        } else if(res.error){
+          vocabOut.appendChild(el('p', 'vocab-note', res.error));
+        } else {
+          showVocab(target, cs, res.initial, res.words, res.merges, res.tokens, res.exhausted);
+        }
+      });
+    }
+
+    // výpis hotového slovníku
+    function showVocab(target, cs, initial, wordCount, merges, tokens, exhausted){
       var sum = el('p', 'vocab-sum');
       sum.appendChild(document.createTextNode('Slovník má '));
-      sum.appendChild(el('b', '', String(size)));
+      sum.appendChild(el('b', '', String(tokens.length)));
       sum.appendChild(document.createTextNode(' symbolů: ' + initial.length + ' jednotlivých znaků a ' + merges.length + ' sloučení. Korpus: '));
-      sum.appendChild(el('b', '', String(order.length)));
+      sum.appendChild(el('b', '', String(wordCount)));
       sum.appendChild(document.createTextNode(stream ? ' různých odstavců a nadpisů.' : ' různých slov.'));
       vocabOut.appendChild(sum);
       var openBtn = el('button', 'btn primary', 'Zobrazit slovník tokenů');
@@ -964,6 +1000,33 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
     vocabIn.addEventListener('keydown', function(e){
       if(e.key === 'Enter'){ e.preventDefault(); buildVocab(); }
     });
+
+    // vlastní text místo článku (využívá program v počítači: karta Trénink)
+    function corpusChanged(name){
+      articleName = name;
+      setArticleBtn();
+      vocabOut.innerHTML = '';
+      highlight();
+    }
+    instances.push({
+      setText: function(text){
+        article.innerHTML = '';
+        var panel = el('div', 'panel');
+        panel.appendChild(el('div', 'panel-title', 'Vlastní text'));
+        text.split(/\r?\n/).forEach(function(line){
+          line = line.replace(/\s+/g, ' ').trim();
+          if(line) panel.appendChild(el('p', '', line));
+        });
+        article.appendChild(panel);
+        makeCollapsible(panel);
+        corpusChanged('vlastní text');
+      },
+      resetText: function(){
+        article.innerHTML = articleHTML;
+        Array.prototype.forEach.call(article.querySelectorAll('.panel'), makeCollapsible);
+        corpusChanged('text o Albertu Einsteinovi');
+      }
+    });
   }
 
   // ---------- WordPiece a SentencePiece: kopie sekce BPE (článek, hledání, slovník) s jinými id ----------
@@ -1013,6 +1076,12 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
   setupTokenizer('', 'bpe');
   setupTokenizer('-wp', 'wp');
   setupTokenizer('-sp', 'sp');
+
+  // Veřejné rozhraní pro program v počítači: nahradit článek vlastním textem a vrátit ho zpět
+  window.llmCorpus = {
+    set: function(text){ instances.forEach(function(i){ i.setText(text); }); },
+    reset: function(){ instances.forEach(function(i){ i.resetText(); }); }
+  };
 
   // ---------- sbalitelné panely ----------
   function makeCollapsible(panel){
