@@ -93,7 +93,7 @@ mark.hl-b{ background:#4fc3ff; }
 mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 4px 8px); }
 .vocab-controls{ display:flex; flex-wrap:wrap; gap:14px 18px; align-items:flex-end; margin-bottom:12px; }
 .vocab-controls .field{ flex:1 1 240px; max-width:360px; }
-#vocab-out{ margin-top:14px; }
+.vocab-out{ margin-top:14px; }
 .vocab-open{ margin:4px 0 12px; }
 .vocab-sum{ font-size:0.9rem; line-height:1.6; margin:0 0 8px; }
 .vocab-sum b{ font-family:'IBM Plex Mono', monospace; }
@@ -180,7 +180,7 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
         <button class="btn primary" id="btn-vocab" type="button">Vytvořit slovník</button>
       </div>
       <div class="hint">Korpusem je text článku níže; slova jsou souvislé řady písmen a číslic. Začíná se slovníkem jednotlivých znaků. V každém kroku se nejčastější dvojice sousedních symbolů (počítá se přes všechny výskyty slov, i překrývající se dvojice) nahradí novým symbolem. Při stejné četnosti vyhrává dvojice, která se v textu vyskytla dřív. Velikost písmen se řídí přepínačem výše.</div>
-      <div id="vocab-out" aria-live="polite"></div>
+      <div id="vocab-out" class="vocab-out" aria-live="polite"></div>
     </div>
 
     <div id="clanek" lang="en">
@@ -520,305 +520,357 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
     });
   });
 
-  // ---------- hledání a zvýraznění v textu ----------
-  var article = document.getElementById('clanek');
-  var caseIn = document.getElementById('in-case');
-  var fields = [
-    {input: document.getElementById('in-find-a'), out: document.getElementById('find-result-a'), cls: 'hl-a'},
-    {input: document.getElementById('in-find-b'), out: document.getElementById('find-result-b'), cls: 'hl-b'}
-  ];
+  function setupTokenizer(sfx, mode){
+    // ---------- hledání a zvýraznění v textu ----------
+    // sfx: přípona id ('' pro BPE, '-wp' pro WordPiece); mode: 'bpe' nebo 'wp'
+    var article = document.getElementById('clanek' + sfx);
+    var caseIn = document.getElementById('in-case' + sfx);
+    var fields = [
+      {input: document.getElementById('in-find-a' + sfx), out: document.getElementById('find-result-a' + sfx), cls: 'hl-a'},
+      {input: document.getElementById('in-find-b' + sfx), out: document.getElementById('find-result-b' + sfx), cls: 'hl-b'}
+    ];
 
-  function clearMarks(){
-    var marks = article.querySelectorAll('mark.hl');
-    Array.prototype.forEach.call(marks, function(m){
-      var parent = m.parentNode;
-      parent.replaceChild(document.createTextNode(m.textContent), m);
-      parent.normalize();
-    });
-  }
-
-  // znak slova: písmeno (má malou a velkou variantu) nebo číslice
-  function isWordChar(c){
-    return c.toLowerCase() !== c.toUpperCase() || (c >= '0' && c <= '9');
-  }
-
-  // v políčku zůstanou jen znaky slova (žádné mezery ani interpunkce)
-  function sanitize(input){
-    var v = input.value;
-    var out = '';
-    for(var i = 0; i < v.length; i++){
-      if(isWordChar(v.charAt(i))) out += v.charAt(i);
-    }
-    if(out !== v) input.value = out;
-  }
-
-  // malá písmena po jednotlivých znacích, aby se zachovala délka řetězce
-  function lower(str){
-    var out = '';
-    for(var i = 0; i < str.length; i++){
-      var c = str.charAt(i).toLowerCase();
-      out += c.length === 1 ? c : str.charAt(i);
-    }
-    return out;
-  }
-
-  // textové uzly článku seskupené po blocích (odstavec, buňka, nadpis...);
-  // výskyty se tak hledají i přes <i>, <sup> apod., ale ne přes hranici odstavce
-  function textGroups(){
-    var walker = document.createTreeWalker(article, NodeFilter.SHOW_TEXT, null, false);
-    var groups = [];
-    var lastBlock = null;
-    while(walker.nextNode()){
-      var n = walker.currentNode;
-      var block = n.parentNode.closest('p, h3, td, th, blockquote, li, .panel-title');
-      if(!groups.length || block !== lastBlock){ groups.push([]); lastBlock = block; }
-      groups[groups.length - 1].push(n);
-    }
-    return groups;
-  }
-
-  function maskClass(mask){
-    return mask === 1 ? 'hl hl-a' : (mask === 2 ? 'hl hl-b' : 'hl hl-ab');
-  }
-
-  function highlight(){
-    clearMarks();
-    var cs = caseIn.checked;
-    var totals = [0, 0];
-    var needles = fields.map(function(f){
-      sanitize(f.input);
-      var q = f.input.value;
-      return q ? (cs ? q : lower(q)) : '';
-    });
-    if(!needles[0] && !needles[1]){
-      fields.forEach(function(f){ f.out.textContent = 'Zadejte písmeno nebo skupinu písmen.'; });
-      return;
-    }
-    var groups = textGroups();
-    groups.forEach(function(nodes){
-      var full = '';
-      var starts = [];
-      nodes.forEach(function(n){ starts.push(full.length); full += n.nodeValue; });
-      var hay = cs ? full : lower(full);
-      var mask = null;   // mask[i]: bit 0 = výskyt prvního políčka, bit 1 = druhého
-      needles.forEach(function(needle, k){
-        if(!needle) return;
-        var pos = hay.indexOf(needle);
-        while(pos >= 0){
-          if(!mask){ mask = []; for(var i = 0; i < full.length; i++) mask.push(0); }
-          totals[k]++;
-          for(var j = pos; j < pos + needle.length; j++) mask[j] |= (1 << k);
-          pos = hay.indexOf(needle, pos + 1);   // i překrývající se výskyty ("aa" v "aaa" = 2×)
-        }
+    function clearMarks(){
+      var marks = article.querySelectorAll('mark.hl');
+      Array.prototype.forEach.call(marks, function(m){
+        var parent = m.parentNode;
+        parent.replaceChild(document.createTextNode(m.textContent), m);
+        parent.normalize();
       });
-      if(!mask) return;
-      nodes.forEach(function(node, k){
-        var text = node.nodeValue;
-        var base = starts[k];
-        var frag = document.createDocumentFragment();
-        var changed = false;
-        var i = 0;
-        while(i < text.length){
-          var m = mask[base + i];
-          var j = i + 1;
-          while(j < text.length && mask[base + j] === m) j++;
-          var piece = text.slice(i, j);
-          if(m){
-            var el = document.createElement('mark');
-            el.className = maskClass(m);
-            el.textContent = piece;
-            frag.appendChild(el);
-            changed = true;
-          } else {
-            frag.appendChild(document.createTextNode(piece));
+    }
+
+    // znak slova: písmeno (má malou a velkou variantu) nebo číslice
+    function isWordChar(c){
+      return c.toLowerCase() !== c.toUpperCase() || (c >= '0' && c <= '9');
+    }
+
+    // v políčku zůstanou jen znaky slova (žádné mezery ani interpunkce)
+    function sanitize(input){
+      var v = input.value;
+      var out = '';
+      for(var i = 0; i < v.length; i++){
+        if(isWordChar(v.charAt(i))) out += v.charAt(i);
+      }
+      if(out !== v) input.value = out;
+    }
+
+    // malá písmena po jednotlivých znacích, aby se zachovala délka řetězce
+    function lower(str){
+      var out = '';
+      for(var i = 0; i < str.length; i++){
+        var c = str.charAt(i).toLowerCase();
+        out += c.length === 1 ? c : str.charAt(i);
+      }
+      return out;
+    }
+
+    // textové uzly článku seskupené po blocích (odstavec, buňka, nadpis...);
+    // výskyty se tak hledají i přes <i>, <sup> apod., ale ne přes hranici odstavce
+    function textGroups(){
+      var walker = document.createTreeWalker(article, NodeFilter.SHOW_TEXT, null, false);
+      var groups = [];
+      var lastBlock = null;
+      while(walker.nextNode()){
+        var n = walker.currentNode;
+        var block = n.parentNode.closest('p, h3, td, th, blockquote, li, .panel-title');
+        if(!groups.length || block !== lastBlock){ groups.push([]); lastBlock = block; }
+        groups[groups.length - 1].push(n);
+      }
+      return groups;
+    }
+
+    function maskClass(mask){
+      return mask === 1 ? 'hl hl-a' : (mask === 2 ? 'hl hl-b' : 'hl hl-ab');
+    }
+
+    function highlight(){
+      clearMarks();
+      var cs = caseIn.checked;
+      var totals = [0, 0];
+      var needles = fields.map(function(f){
+        sanitize(f.input);
+        var q = f.input.value;
+        return q ? (cs ? q : lower(q)) : '';
+      });
+      if(!needles[0] && !needles[1]){
+        fields.forEach(function(f){ f.out.textContent = 'Zadejte písmeno nebo skupinu písmen.'; });
+        return;
+      }
+      var groups = textGroups();
+      groups.forEach(function(nodes){
+        var full = '';
+        var starts = [];
+        nodes.forEach(function(n){ starts.push(full.length); full += n.nodeValue; });
+        var hay = cs ? full : lower(full);
+        var mask = null;   // mask[i]: bit 0 = výskyt prvního políčka, bit 1 = druhého
+        needles.forEach(function(needle, k){
+          if(!needle) return;
+          var pos = hay.indexOf(needle);
+          while(pos >= 0){
+            if(!mask){ mask = []; for(var i = 0; i < full.length; i++) mask.push(0); }
+            totals[k]++;
+            for(var j = pos; j < pos + needle.length; j++) mask[j] |= (1 << k);
+            pos = hay.indexOf(needle, pos + 1);   // i překrývající se výskyty ("aa" v "aaa" = 2×)
           }
-          i = j;
-        }
-        if(changed) node.parentNode.replaceChild(frag, node);
+        });
+        if(!mask) return;
+        nodes.forEach(function(node, k){
+          var text = node.nodeValue;
+          var base = starts[k];
+          var frag = document.createDocumentFragment();
+          var changed = false;
+          var i = 0;
+          while(i < text.length){
+            var m = mask[base + i];
+            var j = i + 1;
+            while(j < text.length && mask[base + j] === m) j++;
+            var piece = text.slice(i, j);
+            if(m){
+              var el = document.createElement('mark');
+              el.className = maskClass(m);
+              el.textContent = piece;
+              frag.appendChild(el);
+              changed = true;
+            } else {
+              frag.appendChild(document.createTextNode(piece));
+            }
+            i = j;
+          }
+          if(changed) node.parentNode.replaceChild(frag, node);
+        });
       });
-    });
-    fields.forEach(function(f, k){
-      var q = f.input.value;
-      if(!q){ f.out.textContent = 'Zadejte písmeno nebo skupinu písmen.'; return; }
-      f.out.innerHTML = 'Výskyt „<b></b>“ v textu: <b></b>×';
-      var bs = f.out.querySelectorAll('b');
-      bs[0].textContent = q;
-      bs[1].textContent = String(totals[k]);
-    });
-  }
-  fields.forEach(function(f){
-    f.out.textContent = 'Zadejte písmeno nebo skupinu písmen.';
-    f.input.addEventListener('input', highlight);
-  });
-  caseIn.addEventListener('change', highlight);
-
-  // ---------- slovník BPE ----------
-  var SEP = '\u0001';
-  var vocabIn = document.getElementById('in-vocab');
-  var vocabOut = document.getElementById('vocab-out');
-
-  function el(tag, cls, text){
-    var e = document.createElement(tag);
-    if(cls) e.className = cls;
-    if(text !== undefined) e.textContent = text;
-    return e;
-  }
-
-  function buildVocab(){
-    var v = vocabIn.value.replace(/[^0-9]/g, '');
-    vocabIn.value = v;
-    vocabOut.innerHTML = '';
-    if(!v){
-      vocabOut.appendChild(el('p', 'vocab-note', 'Zadejte požadovanou velikost slovníku.'));
-      return;
-    }
-    var target = parseInt(v, 10);
-    var cs = caseIn.checked;
-
-    // 1. korpus: slova a jejich četnosti (v pořadí prvního výskytu)
-    var freq = Object.create(null);
-    var order = [];
-    var chars = Object.create(null);
-    textGroups().forEach(function(nodes){
-      var text = '';
-      nodes.forEach(function(n){ text += n.nodeValue; });
-      if(!cs) text = lower(text);
-      var word = '';
-      for(var i = 0; i <= text.length; i++){
-        var c = i < text.length ? text.charAt(i) : '';
-        if(c && isWordChar(c)){ word += c; chars[c] = true; continue; }
-        if(word){
-          if(!(word in freq)){ freq[word] = 0; order.push(word); }
-          freq[word]++;
-          word = '';
-        }
-      }
-    });
-    var initial = Object.keys(chars).sort();
-    if(!order.length){
-      vocabOut.appendChild(el('p', 'vocab-note', 'V textu nejsou žádná slova.'));
-      return;
-    }
-    if(target < initial.length){
-      vocabOut.appendChild(el('p', 'vocab-note', 'Slovník jednotlivých znaků má už ' + initial.length + ' symbolů. Zadejte alespoň toto číslo.'));
-      return;
-    }
-
-    var seqs = order.map(function(w){ return w.split(''); });
-    var weights = order.map(function(w){ return freq[w]; });
-    var inVocab = Object.create(null);
-    initial.forEach(function(c){ inVocab[c] = true; });
-    var size = initial.length;
-    var merges = [];
-    var exhausted = false;
-
-    // 2.-4. opakuj: spočítej dvojice, sluč nejčastější, přidej do slovníku
-    while(size < target){
-      var counts = Object.create(null);
-      var keys = [];
-      for(var i = 0; i < seqs.length; i++){
-        var s = seqs[i];
-        for(var j = 0; j < s.length - 1; j++){
-          var key = s[j] + SEP + s[j + 1];
-          if(counts[key] === undefined){ counts[key] = 0; keys.push(key); }
-          counts[key] += weights[i];
-        }
-      }
-      var best = null;
-      var bestCount = 0;
-      for(var k = 0; k < keys.length; k++){
-        if(counts[keys[k]] > bestCount){ bestCount = counts[keys[k]]; best = keys[k]; }
-      }
-      if(best === null){ exhausted = true; break; }
-      var ab = best.split(SEP);
-      var sym = ab[0] + ab[1];
-      for(var m = 0; m < seqs.length; m++){
-        var old = seqs[m];
-        if(old.length < 2) continue;
-        var nw = [];
-        for(var p = 0; p < old.length; p++){
-          if(p < old.length - 1 && old[p] === ab[0] && old[p + 1] === ab[1]){ nw.push(sym); p++; }
-          else nw.push(old[p]);
-        }
-        seqs[m] = nw;
-      }
-      var dup = !!inVocab[sym];
-      inVocab[sym] = true;
-      if(!dup) size++;
-      merges.push({a: ab[0], b: ab[1], sym: sym, count: bestCount, dup: dup});
-    }
-
-    // slovník tokenů: nejdřív jednotlivé znaky, pak sloučené symboly v pořadí vzniku
-    var tokens = initial.slice();
-    merges.forEach(function(mg){ if(!mg.dup) tokens.push(mg.sym); });
-
-    // výpis
-    var sum = el('p', 'vocab-sum');
-    sum.appendChild(document.createTextNode('Slovník má '));
-    sum.appendChild(el('b', '', String(size)));
-    sum.appendChild(document.createTextNode(' symbolů: ' + initial.length + ' jednotlivých znaků a ' + merges.length + ' sloučení. Korpus: '));
-    sum.appendChild(el('b', '', String(order.length)));
-    sum.appendChild(document.createTextNode(' různých slov.'));
-    vocabOut.appendChild(sum);
-    var openBtn = el('button', 'btn primary', 'Zobrazit slovník tokenů');
-    openBtn.type = 'button';
-    openBtn.id = 'btn-vocab-open';
-    openBtn.addEventListener('click', function(){ openTokenPage(tokens, target, cs); });
-    var openRow = el('div', 'vocab-open');
-    openRow.appendChild(openBtn);
-    vocabOut.appendChild(openRow);
-    if(exhausted){
-      vocabOut.appendChild(el('p', 'vocab-note', 'Slovník nelze zvětšit na ' + target + ': všechna slova už jsou jediným symbolem.'));
-    }
-
-    vocabOut.appendChild(el('p', 'vocab-sum', 'Počáteční slovník (jednotlivé znaky):'));
-    var list = el('div', 'tok-list');
-    initial.forEach(function(c){ list.appendChild(el('span', 'tok', c)); });
-    vocabOut.appendChild(list);
-
-    if(merges.length){
-      vocabOut.appendChild(el('p', 'vocab-sum', 'Sloučení v pořadí vzniku:'));
-      var wrap = el('div', 'vocab-scroll');
-      var table = el('table', 'theory-table');
-      var thead = el('thead');
-      var hr = el('tr');
-      ['Krok', 'Dvojice', 'Nový symbol', 'Četnost'].forEach(function(h){ hr.appendChild(el('th', 'mono', h)); });
-      thead.appendChild(hr);
-      table.appendChild(thead);
-      var tbody = el('tbody');
-      merges.forEach(function(mg, idx){
-        var tr = el('tr');
-        tr.appendChild(el('td', 'mono', String(idx + 1)));
-        tr.appendChild(el('td', 'mono', mg.a + ' + ' + mg.b));
-        tr.appendChild(el('td', 'mono', mg.sym + (mg.dup ? ' (zápis už ve slovníku je)' : '')));
-        tr.appendChild(el('td', 'mono', String(mg.count)));
-        tbody.appendChild(tr);
+      fields.forEach(function(f, k){
+        var q = f.input.value;
+        if(!q){ f.out.textContent = 'Zadejte písmeno nebo skupinu písmen.'; return; }
+        f.out.innerHTML = 'Výskyt „<b></b>“ v textu: <b></b>×';
+        var bs = f.out.querySelectorAll('b');
+        bs[0].textContent = q;
+        bs[1].textContent = String(totals[k]);
       });
-      table.appendChild(tbody);
-      wrap.appendChild(table);
-      vocabOut.appendChild(wrap);
     }
-  }
-  // samostatná stránka se slovníkem tokenů; data se předávají přes localStorage
-  function openTokenPage(tokens, target, cs){
-    var note = document.getElementById('vocab-open-note');
-    if(note) note.remove();
-    try{
-      localStorage.setItem('matematika:bpe-slovnik', JSON.stringify({tokens: tokens, target: target, caseSensitive: cs}));
-    }catch(e){
-      var row = document.querySelector('.vocab-open');
-      var msg = el('p', 'vocab-note', 'Prohlížeč nepovolil uložit slovník pro novou stránku.');
-      msg.id = 'vocab-open-note';
-      row.appendChild(msg);
-      return;
+    fields.forEach(function(f){
+      f.out.textContent = 'Zadejte písmeno nebo skupinu písmen.';
+      f.input.addEventListener('input', highlight);
+    });
+    caseIn.addEventListener('change', highlight);
+
+    // ---------- slovník BPE ----------
+    var SEP = '\u0001';
+    var vocabIn = document.getElementById('in-vocab' + sfx);
+    var vocabOut = document.getElementById('vocab-out' + sfx);
+
+    function el(tag, cls, text){
+      var e = document.createElement(tag);
+      if(cls) e.className = cls;
+      if(text !== undefined) e.textContent = text;
+      return e;
     }
-    window.open('slovnik-tokenu.html', '_blank');
+
+    // poměr s desetinnou čárkou; malé hodnoty v desítkové exponenciální podobě
+    function fmtRatio(x){
+      if(x >= 0.01) return x.toFixed(3).replace('.', ',');
+      var parts = x.toExponential(2).split('e');
+      var sup = {'0':'⁰','1':'¹','2':'²','3':'³','4':'⁴','5':'⁵','6':'⁶','7':'⁷','8':'⁸','9':'⁹','-':'⁻'};
+      var e = parts[1].replace('+', '').split('').map(function(ch){ return sup[ch]; }).join('');
+      return parts[0].replace('.', ',') + '·10' + e;
+    }
+
+    function buildVocab(){
+      var v = vocabIn.value.replace(/[^0-9]/g, '');
+      vocabIn.value = v;
+      vocabOut.innerHTML = '';
+      if(!v){
+        vocabOut.appendChild(el('p', 'vocab-note', 'Zadejte požadovanou velikost slovníku.'));
+        return;
+      }
+      var target = parseInt(v, 10);
+      var cs = caseIn.checked;
+
+      // 1. korpus: slova a jejich četnosti (v pořadí prvního výskytu)
+      var freq = Object.create(null);
+      var order = [];
+      var chars = Object.create(null);
+      textGroups().forEach(function(nodes){
+        var text = '';
+        nodes.forEach(function(n){ text += n.nodeValue; });
+        if(!cs) text = lower(text);
+        var word = '';
+        for(var i = 0; i <= text.length; i++){
+          var c = i < text.length ? text.charAt(i) : '';
+          if(c && isWordChar(c)){ word += c; chars[c] = true; continue; }
+          if(word){
+            if(!(word in freq)){ freq[word] = 0; order.push(word); }
+            freq[word]++;
+            word = '';
+          }
+        }
+      });
+      var initial = Object.keys(chars).sort();
+      if(!order.length){
+        vocabOut.appendChild(el('p', 'vocab-note', 'V textu nejsou žádná slova.'));
+        return;
+      }
+      if(target < initial.length){
+        vocabOut.appendChild(el('p', 'vocab-note', 'Slovník jednotlivých znaků má už ' + initial.length + ' symbolů. Zadejte alespoň toto číslo.'));
+        return;
+      }
+
+      var seqs = order.map(function(w){ return w.split(''); });
+      var weights = order.map(function(w){ return freq[w]; });
+      var inVocab = Object.create(null);
+      initial.forEach(function(c){ inVocab[c] = true; });
+      var size = initial.length;
+      var merges = [];
+      var exhausted = false;
+
+      // 2.-4. opakuj: spočítej dvojice, sluč nejčastější, přidej do slovníku
+      while(size < target){
+        var counts = Object.create(null);   // #(AB): počet výskytů dvojice vedle sebe
+        var symCounts = Object.create(null);   // #(A): počet výskytů symbolu v aktuálním rozkladu
+        var keys = [];
+        for(var i = 0; i < seqs.length; i++){
+          var s = seqs[i];
+          for(var j = 0; j < s.length; j++){
+            symCounts[s[j]] = (symCounts[s[j]] || 0) + weights[i];
+            if(j < s.length - 1){
+              var key = s[j] + SEP + s[j + 1];
+              if(counts[key] === undefined){ counts[key] = 0; keys.push(key); }
+              counts[key] += weights[i];
+            }
+          }
+        }
+        var best = null;
+        var bestCount = 0;
+        var bestA = 0;
+        var bestB = 0;
+        for(var k = 0; k < keys.length; k++){
+          var c = counts[keys[k]];
+          var parts = keys[k].split(SEP);
+          var ca = symCounts[parts[0]];
+          var cb = symCounts[parts[1]];
+          // BPE: největší #(AB); WordPiece: největší poměr #(AB) / (#(A) · #(B)),
+          // porovnáno přesně křížovým násobením (c / (ca·cb) > bestCount / (bestA·bestB))
+          var better = mode === 'wp'
+            ? (best === null || c * bestA * bestB > bestCount * ca * cb)
+            : c > bestCount;
+          if(better){ best = keys[k]; bestCount = c; bestA = ca; bestB = cb; }
+        }
+        if(best === null){ exhausted = true; break; }
+        var ab = best.split(SEP);
+        var sym = ab[0] + ab[1];
+        for(var m = 0; m < seqs.length; m++){
+          var old = seqs[m];
+          if(old.length < 2) continue;
+          var nw = [];
+          for(var p = 0; p < old.length; p++){
+            if(p < old.length - 1 && old[p] === ab[0] && old[p + 1] === ab[1]){ nw.push(sym); p++; }
+            else nw.push(old[p]);
+          }
+          seqs[m] = nw;
+        }
+        var dup = !!inVocab[sym];
+        inVocab[sym] = true;
+        if(!dup) size++;
+        merges.push({a: ab[0], b: ab[1], sym: sym, count: bestCount, ca: bestA, cb: bestB, dup: dup});
+      }
+
+      // slovník tokenů: nejdřív jednotlivé znaky, pak sloučené symboly v pořadí vzniku
+      var tokens = initial.slice();
+      merges.forEach(function(mg){ if(!mg.dup) tokens.push(mg.sym); });
+
+      // výpis
+      var sum = el('p', 'vocab-sum');
+      sum.appendChild(document.createTextNode('Slovník má '));
+      sum.appendChild(el('b', '', String(size)));
+      sum.appendChild(document.createTextNode(' symbolů: ' + initial.length + ' jednotlivých znaků a ' + merges.length + ' sloučení. Korpus: '));
+      sum.appendChild(el('b', '', String(order.length)));
+      sum.appendChild(document.createTextNode(' různých slov.'));
+      vocabOut.appendChild(sum);
+      var openBtn = el('button', 'btn primary', 'Zobrazit slovník tokenů');
+      openBtn.type = 'button';
+      openBtn.id = 'btn-vocab-open' + sfx;
+      openBtn.addEventListener('click', function(){ openTokenPage(tokens, target, cs); });
+      var openRow = el('div', 'vocab-open');
+      openRow.appendChild(openBtn);
+      vocabOut.appendChild(openRow);
+      if(exhausted){
+        vocabOut.appendChild(el('p', 'vocab-note', 'Slovník nelze zvětšit na ' + target + ': všechna slova už jsou jediným symbolem.'));
+      }
+
+      vocabOut.appendChild(el('p', 'vocab-sum', 'Počáteční slovník (jednotlivé znaky):'));
+      var list = el('div', 'tok-list');
+      initial.forEach(function(c){ list.appendChild(el('span', 'tok', c)); });
+      vocabOut.appendChild(list);
+
+      if(merges.length){
+        vocabOut.appendChild(el('p', 'vocab-sum', 'Sloučení v pořadí vzniku:'));
+        var wrap = el('div', 'vocab-scroll');
+        var table = el('table', 'theory-table');
+        var thead = el('thead');
+        var hr = el('tr');
+        var heads = mode === 'wp'
+          ? ['Krok', 'Dvojice', 'Nový symbol', '#(AB)', '#(A)', '#(B)', '#(AB) / (#(A) · #(B))']
+          : ['Krok', 'Dvojice', 'Nový symbol', 'Četnost'];
+        heads.forEach(function(h){ hr.appendChild(el('th', 'mono', h)); });
+        thead.appendChild(hr);
+        table.appendChild(thead);
+        var tbody = el('tbody');
+        merges.forEach(function(mg, idx){
+          var tr = el('tr');
+          tr.appendChild(el('td', 'mono', String(idx + 1)));
+          tr.appendChild(el('td', 'mono', mg.a + ' + ' + mg.b));
+          tr.appendChild(el('td', 'mono', mg.sym + (mg.dup ? ' (zápis už ve slovníku je)' : '')));
+          tr.appendChild(el('td', 'mono', String(mg.count)));
+          if(mode === 'wp'){
+            tr.appendChild(el('td', 'mono', String(mg.ca)));
+            tr.appendChild(el('td', 'mono', String(mg.cb)));
+            tr.appendChild(el('td', 'mono', fmtRatio(mg.count / (mg.ca * mg.cb))));
+          }
+          tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        wrap.appendChild(table);
+        vocabOut.appendChild(wrap);
+      }
+    }
+    // samostatná stránka se slovníkem tokenů; data se předávají přes localStorage
+    function openTokenPage(tokens, target, cs){
+      var note = vocabOut.querySelector('.vocab-note-open');
+      if(note) note.remove();
+      try{
+        localStorage.setItem('matematika:' + (mode === 'wp' ? 'wordpiece' : 'bpe') + '-slovnik', JSON.stringify({tokens: tokens, target: target, caseSensitive: cs}));
+      }catch(e){
+        var row = vocabOut.querySelector('.vocab-open');
+        var msg = el('p', 'vocab-note vocab-note-open', 'Prohlížeč nepovolil uložit slovník pro novou stránku.');
+        row.appendChild(msg);
+        return;
+      }
+      window.open('slovnik-tokenu.html?typ=' + (mode === 'wp' ? 'wordpiece' : 'bpe'), '_blank');
+    }
+
+    document.getElementById('btn-vocab' + sfx).addEventListener('click', buildVocab);
+    vocabIn.addEventListener('keydown', function(e){
+      if(e.key === 'Enter'){ e.preventDefault(); buildVocab(); }
+    });
   }
 
-  document.getElementById('btn-vocab').addEventListener('click', buildVocab);
-  vocabIn.addEventListener('keydown', function(e){
-    if(e.key === 'Enter'){ e.preventDefault(); buildVocab(); }
+  // ---------- WordPiece: kopie sekce BPE (článek, hledání, slovník) s jinými id ----------
+  var wpSection = document.getElementById('sub-wordpiece');
+  var wpClone = document.getElementById('sub-bpe').cloneNode(true);
+  Array.prototype.forEach.call(wpClone.querySelectorAll('[id]'), function(e){ e.id = e.id + '-wp'; });
+  Array.prototype.forEach.call(wpClone.querySelectorAll('label[for]'), function(e){
+    e.setAttribute('for', e.getAttribute('for') + '-wp');
   });
+  wpClone.querySelector('#vocab-panel-wp .panel-title').textContent = 'Slovník WordPiece';
+  wpClone.querySelector('#vocab-panel-wp > .hint').textContent =
+    'Korpusem je text článku níže; slova jsou souvislé řady písmen a číslic. Začíná se slovníkem jednotlivých znaků. ' +
+    'V každém kroku se vybere dvojice sousedních symbolů (A, B) s největším poměrem #(AB) / (#(A) · #(B)), tedy ta, která se vyskytuje spolu mnohem častěji, než by odpovídalo náhodě, ' +
+    'a nahradí se novým symbolem AB. #(AB) je počet výskytů dvojice vedle sebe, #(A) a #(B) jsou počty výskytů jednotlivých symbolů v aktuálním rozkladu slov ' +
+    '(počítají se všechny výskyty slov, i překrývající se dvojice). Při shodě poměru vyhrává dvojice, která se v textu vyskytla dřív. Velikost písmen se řídí přepínačem výše.';
+  while(wpClone.firstChild){ wpSection.appendChild(wpClone.firstChild); }
+
+  setupTokenizer('', 'bpe');
+  setupTokenizer('-wp', 'wp');
 
   // ---------- sbalitelné panely ----------
   function makeCollapsible(panel){
@@ -852,7 +904,7 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
     });
     panel._open = function(){ if(title.getAttribute('aria-expanded') !== 'true') toggle(); };
   }
-  var panels = document.querySelectorAll('#clanek .panel, #vocab-panel');
+  var panels = document.querySelectorAll('#clanek .panel, #vocab-panel, #clanek-wp .panel, #vocab-panel-wp');
   Array.prototype.forEach.call(panels, makeCollapsible);
 
   // odkaz z obsahu rozbalí cílový panel
