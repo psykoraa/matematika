@@ -84,10 +84,19 @@
 }
 .check{ display:inline-flex; align-items:center; gap:8px; margin-top:10px; font-size:0.84rem; color:var(--ink-soft); cursor:pointer; }
 .check input{ width:18px; height:18px; accent-color:var(--accent); }
-.find-result{ margin-top:10px; font-size:0.9rem; color:var(--ink-soft); }
+.find-result{ margin-top:8px; min-height:1.4em; font-size:0.9rem; color:var(--ink-soft); }
 .find-result b{ font-family:'IBM Plex Mono', monospace; font-size:1.05rem; color:var(--ink); }
 /* výrazné zvýraznění, čitelné i na projektoru */
-mark.hl{ background:#ffc400; color:#000; border-radius:2px; padding:0; box-shadow:0 0 0 1px #212b34; }
+mark.hl{ color:#000; border-radius:2px; padding:0; box-shadow:0 0 0 1px #212b34; }
+mark.hl-a{ background:#ffc400; }
+mark.hl-b{ background:#4fc3ff; }
+mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 4px 8px); }
+.find-grid{ display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:14px 18px; }
+.swatch{ display:inline-block; width:14px; height:14px; border-radius:3px; border:1px solid #212b34; margin-right:7px; vertical-align:-2px; }
+.swatch-a{ background:#ffc400; }
+.swatch-b{ background:#4fc3ff; }
+.input-a{ border-left:6px solid #ffc400; }
+.input-b{ border-left:6px solid #4fc3ff; }
 
 @media (max-width:520px){
   .brand-text h1{ font-size:2rem; }
@@ -129,13 +138,20 @@ mark.hl{ background:#ffc400; color:#000; border-radius:2px; padding:0; box-shado
 
     <div class="panel finder">
       <div class="panel-title">Hledání v textu</div>
-      <div class="field">
-        <label for="in-find">Písmeno nebo skupina písmen</label>
-        <div class="input-wrap"><input id="in-find" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="např. th" inputmode="text"></div>
+      <div class="find-grid">
+        <div class="field">
+          <label for="in-find-a"><span class="swatch swatch-a"></span>Písmeno nebo skupina písmen (žlutá)</label>
+          <div class="input-wrap input-a"><input id="in-find-a" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="např. th" inputmode="text"></div>
+          <div class="find-result" id="find-result-a" aria-live="polite"></div>
+        </div>
+        <div class="field">
+          <label for="in-find-b"><span class="swatch swatch-b"></span>Písmeno nebo skupina písmen (modrá)</label>
+          <div class="input-wrap input-b"><input id="in-find-b" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="např. er" inputmode="text"></div>
+          <div class="find-result" id="find-result-b" aria-live="polite"></div>
+        </div>
       </div>
       <label class="check"><input type="checkbox" id="in-case" checked> rozlišovat velká a malá písmena</label>
-      <div class="find-result" id="find-result" aria-live="polite">Zadejte písmeno nebo skupinu písmen.</div>
-      <div class="hint">Hledá se jen uvnitř jednoho slova (slovo = souvislá řada písmen a číslic; mezery a interpunkci nelze zadat). Překrývající se výskyty se počítají všechny, např. „aa“ v „aaa“ je 2×.</div>
+      <div class="hint">Hledá se jen uvnitř jednoho slova (slovo = souvislá řada písmen a číslic; mezery a interpunkci nelze zadat). Překrývající se výskyty se počítají všechny, např. „aa“ v „aaa“ je 2×. Kde se překrývají výskyty obou políček, je text žlutomodře pruhovaný.</div>
     </div>
 
     <div id="clanek" lang="en">
@@ -477,9 +493,11 @@ mark.hl{ background:#ffc400; color:#000; border-radius:2px; padding:0; box-shado
 
   // ---------- hledání a zvýraznění v textu ----------
   var article = document.getElementById('clanek');
-  var findIn = document.getElementById('in-find');
   var caseIn = document.getElementById('in-case');
-  var findOut = document.getElementById('find-result');
+  var fields = [
+    {input: document.getElementById('in-find-a'), out: document.getElementById('find-result-a'), cls: 'hl-a'},
+    {input: document.getElementById('in-find-b'), out: document.getElementById('find-result-b'), cls: 'hl-b'}
+  ];
 
   function clearMarks(){
     var marks = article.querySelectorAll('mark.hl');
@@ -496,13 +514,13 @@ mark.hl{ background:#ffc400; color:#000; border-radius:2px; padding:0; box-shado
   }
 
   // v políčku zůstanou jen znaky slova (žádné mezery ani interpunkce)
-  function sanitize(){
-    var v = findIn.value;
+  function sanitize(input){
+    var v = input.value;
     var out = '';
     for(var i = 0; i < v.length; i++){
       if(isWordChar(v.charAt(i))) out += v.charAt(i);
     }
-    if(out !== v) findIn.value = out;
+    if(out !== v) input.value = out;
   }
 
   // malá písmena po jednotlivých znacích, aby se zachovala délka řetězce
@@ -515,16 +533,23 @@ mark.hl{ background:#ffc400; color:#000; border-radius:2px; padding:0; box-shado
     return out;
   }
 
+  function maskClass(mask){
+    return mask === 1 ? 'hl hl-a' : (mask === 2 ? 'hl hl-b' : 'hl hl-ab');
+  }
+
   function highlight(){
-    sanitize();
     clearMarks();
-    var q = findIn.value;
-    if(!q){
-      findOut.textContent = 'Zadejte písmeno nebo skupinu písmen.';
+    var cs = caseIn.checked;
+    var totals = [0, 0];
+    var needles = fields.map(function(f){
+      sanitize(f.input);
+      var q = f.input.value;
+      return q ? (cs ? q : lower(q)) : '';
+    });
+    if(!needles[0] && !needles[1]){
+      fields.forEach(function(f){ f.out.textContent = 'Zadejte písmeno nebo skupinu písmen.'; });
       return;
     }
-    var cs = caseIn.checked;
-    var needle = cs ? q : lower(q);
     var walker = document.createTreeWalker(article, NodeFilter.SHOW_TEXT, null, false);
     // texty se spojují po blocích (odstavec, buňka, nadpis...), aby se našly
     // i výskyty, které přecházejí přes <i>, <sup> apod., ale ne přes hranici odstavce
@@ -536,58 +561,61 @@ mark.hl{ background:#ffc400; color:#000; border-radius:2px; padding:0; box-shado
       if(!groups.length || block !== lastBlock){ groups.push([]); lastBlock = block; }
       groups[groups.length - 1].push(n);
     }
-    var total = 0;
     groups.forEach(function(nodes){
       var full = '';
       var starts = [];
       nodes.forEach(function(n){ starts.push(full.length); full += n.nodeValue; });
       var hay = cs ? full : lower(full);
-      var found = [];
-      var pos = hay.indexOf(needle);
-      while(pos >= 0){
-        found.push(pos);
-        pos = hay.indexOf(needle, pos + 1);   // i překrývající se výskyty ("aa" v "aaa" = 2×)
-      }
-      if(!found.length) return;
-      total += found.length;
-      // zvýrazněné úseky: překrývající se výskyty se sloučí do jednoho
-      var spans = [];
-      found.forEach(function(f){
-        var end = f + needle.length;
-        if(spans.length && f <= spans[spans.length - 1][1]) spans[spans.length - 1][1] = end;
-        else spans.push([f, end]);
+      var mask = null;   // mask[i]: bit 0 = výskyt prvního políčka, bit 1 = druhého
+      needles.forEach(function(needle, k){
+        if(!needle) return;
+        var pos = hay.indexOf(needle);
+        while(pos >= 0){
+          if(!mask){ mask = []; for(var i = 0; i < full.length; i++) mask.push(0); }
+          totals[k]++;
+          for(var j = pos; j < pos + needle.length; j++) mask[j] |= (1 << k);
+          pos = hay.indexOf(needle, pos + 1);   // i překrývající se výskyty ("aa" v "aaa" = 2×)
+        }
       });
+      if(!mask) return;
       nodes.forEach(function(node, k){
-        var nStart = starts[k];
-        var nEnd = nStart + node.nodeValue.length;
         var text = node.nodeValue;
+        var base = starts[k];
         var frag = document.createDocumentFragment();
-        var last = 0;
         var changed = false;
-        spans.forEach(function(sp){
-          var a = Math.max(sp[0], nStart) - nStart;
-          var b = Math.min(sp[1], nEnd) - nStart;
-          if(b <= a) return;
-          if(a > last) frag.appendChild(document.createTextNode(text.slice(last, a)));
-          var m = document.createElement('mark');
-          m.className = 'hl';
-          m.textContent = text.slice(a, b);
-          frag.appendChild(m);
-          last = b;
-          changed = true;
-        });
-        if(!changed) return;
-        if(last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
-        node.parentNode.replaceChild(frag, node);
+        var i = 0;
+        while(i < text.length){
+          var m = mask[base + i];
+          var j = i + 1;
+          while(j < text.length && mask[base + j] === m) j++;
+          var piece = text.slice(i, j);
+          if(m){
+            var el = document.createElement('mark');
+            el.className = maskClass(m);
+            el.textContent = piece;
+            frag.appendChild(el);
+            changed = true;
+          } else {
+            frag.appendChild(document.createTextNode(piece));
+          }
+          i = j;
+        }
+        if(changed) node.parentNode.replaceChild(frag, node);
       });
     });
-    var shown = q.replace(/ /g, '\u2423');
-    findOut.innerHTML = 'Výskyt „<b></b>“ v textu: <b></b>×';
-    var bs = findOut.querySelectorAll('b');
-    bs[0].textContent = shown;
-    bs[1].textContent = String(total);
+    fields.forEach(function(f, k){
+      var q = f.input.value;
+      if(!q){ f.out.textContent = 'Zadejte písmeno nebo skupinu písmen.'; return; }
+      f.out.innerHTML = 'Výskyt „<b></b>“ v textu: <b></b>×';
+      var bs = f.out.querySelectorAll('b');
+      bs[0].textContent = q;
+      bs[1].textContent = String(totals[k]);
+    });
   }
-  findIn.addEventListener('input', highlight);
+  fields.forEach(function(f){
+    f.out.textContent = 'Zadejte písmeno nebo skupinu písmen.';
+    f.input.addEventListener('input', highlight);
+  });
   caseIn.addEventListener('change', highlight);
 
   // ---------- sbalitelné panely ----------
