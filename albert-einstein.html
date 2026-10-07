@@ -620,6 +620,8 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
       while(walker.nextNode()){
         var n = walker.currentNode;
         if(n.parentNode.closest('.toggle-arrow')) continue;   // šipka sbalovacího panelu není součástí textu
+        var ptitle = n.parentNode.closest('.panel-title');
+        if(ptitle && ptitle.parentNode.hasAttribute('data-synthetic')) continue;   // doplněný nadpis vlastního textu
         var block = n.parentNode.closest('p, h3, td, th, blockquote, li, .panel-title');
         if(!block) continue;   // prázdné znaky mezi bloky nejsou text článku
         if(!groups.length || block !== lastBlock){ groups.push([]); lastBlock = block; }
@@ -1012,6 +1014,7 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
       setText: function(text){
         article.innerHTML = '';
         var panel = el('div', 'panel');
+        panel.setAttribute('data-synthetic', '');   // nadpis panelu se nepočítá do textu
         panel.appendChild(el('div', 'panel-title', 'Vlastní text'));
         text.split(/\r?\n/).forEach(function(line){
           line = line.replace(/\s+/g, ' ').trim();
