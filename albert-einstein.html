@@ -665,12 +665,12 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
         var bs = f.out.querySelectorAll('b');
         bs[0].textContent = q;
         bs[1].textContent = String(totals[k]);
-        if(mode === 'wp') renderSplits(f.out, q, splitCounts || Object.create(null));
+        if(mode === 'wp') renderSplits(f.out, q, splitCounts || Object.create(null), totals[k]);
       });
     }
 
     // WordPiece: počty všech dvojic částí, jejichž sloučením může řada vzniknout
-    function renderSplits(out, q, counts){
+    function renderSplits(out, q, counts, whole){
       var needle = cs0() ? q : lower(q);
       if(needle.length < 2){
         out.appendChild(el('div', 'split-note', 'Jeden znak nevzniká sloučením, nemá se na co rozložit.'));
@@ -690,7 +690,9 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
         li.appendChild(el('b', '', String(counts[left])));
         li.appendChild(document.createTextNode('×,  #(' + right + ') = '));
         li.appendChild(el('b', '', String(counts[right])));
-        li.appendChild(document.createTextNode('×'));
+        li.appendChild(document.createTextNode('×,  #(' + needle + ') / (#(' + left + ') · #(' + right + ')) = '));
+        var denom = counts[left] * counts[right];
+        li.appendChild(el('b', '', denom ? fmtRatio(whole / denom) : '—'));
         list.appendChild(li);
       }
       out.appendChild(list);
@@ -716,6 +718,7 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
 
     // poměr s desetinnou čárkou; malé hodnoty v desítkové exponenciální podobě
     function fmtRatio(x){
+      if(x === 0) return '0';
       if(x >= 0.01) return x.toFixed(3).replace('.', ',');
       var parts = x.toExponential(2).split('e');
       var sup = {'0':'⁰','1':'¹','2':'²','3':'³','4':'⁴','5':'⁵','6':'⁶','7':'⁷','8':'⁸','9':'⁹','-':'⁻'};
