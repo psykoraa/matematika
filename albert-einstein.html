@@ -86,7 +86,8 @@
 .check input{ width:18px; height:18px; accent-color:var(--accent); }
 .find-result{ margin-top:10px; font-size:0.9rem; color:var(--ink-soft); }
 .find-result b{ font-family:'IBM Plex Mono', monospace; font-size:1.05rem; color:var(--ink); }
-mark.hl{ background:rgba(201,88,31,0.32); color:inherit; border-radius:2px; padding:0; }
+/* výrazné zvýraznění, čitelné i na projektoru */
+mark.hl{ background:#ffc400; color:#000; border-radius:2px; padding:0; box-shadow:0 0 0 1px #212b34; }
 
 @media (max-width:520px){
   .brand-text h1{ font-size:2rem; }
@@ -130,11 +131,11 @@ mark.hl{ background:rgba(201,88,31,0.32); color:inherit; border-radius:2px; padd
       <div class="panel-title">Hledání v textu</div>
       <div class="field">
         <label for="in-find">Písmeno nebo skupina písmen</label>
-        <div class="input-wrap"><input id="in-find" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="např. th"></div>
+        <div class="input-wrap"><input id="in-find" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="např. th" inputmode="text"></div>
       </div>
       <label class="check"><input type="checkbox" id="in-case" checked> rozlišovat velká a malá písmena</label>
       <div class="find-result" id="find-result" aria-live="polite">Zadejte písmeno nebo skupinu písmen.</div>
-      <div class="hint">Překrývající se výskyty se počítají všechny (např. „aa“ v „aaa“ je 2×).</div>
+      <div class="hint">Hledá se jen uvnitř jednoho slova (slovo = souvislá řada písmen a číslic; mezery a interpunkci nelze zadat). Překrývající se výskyty se počítají všechny, např. „aa“ v „aaa“ je 2×.</div>
     </div>
 
     <div id="clanek" lang="en">
@@ -489,6 +490,21 @@ mark.hl{ background:rgba(201,88,31,0.32); color:inherit; border-radius:2px; padd
     });
   }
 
+  // znak slova: písmeno (má malou a velkou variantu) nebo číslice
+  function isWordChar(c){
+    return c.toLowerCase() !== c.toUpperCase() || (c >= '0' && c <= '9');
+  }
+
+  // v políčku zůstanou jen znaky slova (žádné mezery ani interpunkce)
+  function sanitize(){
+    var v = findIn.value;
+    var out = '';
+    for(var i = 0; i < v.length; i++){
+      if(isWordChar(v.charAt(i))) out += v.charAt(i);
+    }
+    if(out !== v) findIn.value = out;
+  }
+
   // malá písmena po jednotlivých znacích, aby se zachovala délka řetězce
   function lower(str){
     var out = '';
@@ -500,6 +516,7 @@ mark.hl{ background:rgba(201,88,31,0.32); color:inherit; border-radius:2px; padd
   }
 
   function highlight(){
+    sanitize();
     clearMarks();
     var q = findIn.value;
     if(!q){
