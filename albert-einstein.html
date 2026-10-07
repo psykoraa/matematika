@@ -852,7 +852,7 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
     });
     panel._open = function(){ if(title.getAttribute('aria-expanded') !== 'true') toggle(); };
   }
-  var panels = document.querySelectorAll('#clanek .panel');
+  var panels = document.querySelectorAll('#clanek .panel, #vocab-panel');
   Array.prototype.forEach.call(panels, makeCollapsible);
 
   // odkaz z obsahu rozbalí cílový panel
