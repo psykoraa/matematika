@@ -65,7 +65,8 @@
 
 .credit{ font-size:0.78rem; color:var(--ink-soft); line-height:1.5; margin:18px 0 0; }
 .credit a{ color:var(--focus); }
-.tab-section[hidden]{ display:none; }
+.tab-section[hidden], .sub-section[hidden]{ display:none; }
+.sub-switch{ margin-bottom:18px; }
 
 @media (max-width:520px){
   .brand-text h1{ font-size:2rem; }
@@ -92,10 +93,17 @@
   </div>
 
   <div class="top-tabs">
-    <button class="toptab on" id="top-tab-text" data-tab="text">Text</button>
+    <button class="toptab on" id="top-tab-tokenizace" data-tab="tokenizace">Tokenizace</button>
   </div>
 
-  <div id="view-text" class="tab-section">
+  <div id="view-tokenizace" class="tab-section">
+
+    <div class="row sub-switch" role="tablist" aria-label="Algoritmus tokenizace">
+      <button class="chip on" id="sub-tab-bpe" data-sub="bpe" role="tab" aria-selected="true">BPE</button>
+      <button class="chip" id="sub-tab-wordpiece" data-sub="wordpiece" role="tab" aria-selected="false">WordPiece</button>
+    </div>
+
+    <div id="sub-bpe" class="sub-section" role="tabpanel">
 
     <div id="clanek" lang="en">
       <div class="panel" id="uvod">
@@ -394,6 +402,10 @@
     </div>
 
     <p class="credit">Zdroj: Wikipedia contributors, „Albert Einstein“, <a href="https://en.wikipedia.org/wiki/Albert_Einstein" target="_blank" rel="noopener">en.wikipedia.org/wiki/Albert_Einstein</a>, dostupné pod licencí <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener">CC BY-SA 4.0</a>. Zobrazeno 7. 10. 2026.</p>
+    </div>
+
+    <div id="sub-wordpiece" class="sub-section" role="tabpanel" hidden></div>
+
   </div>
 
   <footer>Matematický seminář — velké jazykové modely</footer>
@@ -411,6 +423,21 @@
       Array.prototype.forEach.call(tabs, function(x){ x.classList.toggle('on', x === b); });
       Array.prototype.forEach.call(document.querySelectorAll('.tab-section'), function(s){
         s.hidden = s.id !== 'view-' + t;
+      });
+    });
+  });
+
+  // ---------- přepínač BPE / WordPiece ----------
+  var subs = document.querySelectorAll('[data-sub]');
+  Array.prototype.forEach.call(subs, function(b){
+    b.addEventListener('click', function(){
+      var t = b.getAttribute('data-sub');
+      Array.prototype.forEach.call(subs, function(x){
+        x.classList.toggle('on', x === b);
+        x.setAttribute('aria-selected', x === b ? 'true' : 'false');
+      });
+      Array.prototype.forEach.call(document.querySelectorAll('.sub-section'), function(s){
+        s.hidden = s.id !== 'sub-' + t;
       });
     });
   });
