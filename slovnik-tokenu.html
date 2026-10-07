@@ -74,7 +74,7 @@
   </div>
 
   <ul class="token-grid" id="token-grid"></ul>
-  <p class="empty" id="empty" hidden>Slovník zatím není vytvořený. Vraťte se na stránku Tokenizace, zadejte velikost slovníku, klikněte na „Vytvořit slovník“ a potom na „Zobrazit slovník tokenů“ (u stejného algoritmu, BPE nebo WordPiece).</p>
+  <p class="empty" id="empty" hidden>Slovník zatím není vytvořený. Vraťte se na stránku Tokenizace, zadejte velikost slovníku, klikněte na „Vytvořit slovník“ a potom na „Zobrazit slovník tokenů“ (u stejného algoritmu: BPE, WordPiece nebo SentencePiece).</p>
 
   <footer>Matematický seminář — velké jazykové modely</footer>
 </div>
@@ -83,11 +83,13 @@
 (function(){
   'use strict';
 
-  // ?typ=wordpiece nebo ?typ=bpe (výchozí)
-  var wp = /[?&]typ=wordpiece/.test(window.location.search);
+  // ?typ=wordpiece, ?typ=sentencepiece nebo ?typ=bpe (výchozí)
+  var typ = /[?&]typ=(wordpiece|sentencepiece)/.exec(window.location.search);
+  typ = typ ? typ[1] : 'bpe';
+  var typNazev = {bpe: 'BPE', wordpiece: 'WordPiece', sentencepiece: 'SentencePiece'}[typ];
   var data = null;
   try{
-    data = JSON.parse(localStorage.getItem('matematika:' + (wp ? 'wordpiece' : 'bpe') + '-slovnik'));
+    data = JSON.parse(localStorage.getItem('matematika:' + typ + '-slovnik'));
   }catch(e){ data = null; }
 
   var grid = document.getElementById('token-grid');
@@ -111,7 +113,7 @@
     frag.appendChild(li);
   });
   grid.appendChild(frag);
-  document.getElementById('brand-p').textContent = (wp ? 'WordPiece, ' : 'BPE, ') + data.tokens.length + ' tokenů';
+  document.getElementById('brand-p').textContent = typNazev + ', ' + data.tokens.length + ' tokenů';
 })();
 </script>
 

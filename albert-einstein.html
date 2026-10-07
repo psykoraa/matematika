@@ -151,6 +151,7 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
     <div class="row sub-switch" role="tablist" aria-label="Algoritmus tokenizace">
       <button class="chip on" id="sub-tab-bpe" data-sub="bpe" role="tab" aria-selected="true">BPE</button>
       <button class="chip" id="sub-tab-wordpiece" data-sub="wordpiece" role="tab" aria-selected="false">WordPiece</button>
+      <button class="chip" id="sub-tab-sentencepiece" data-sub="sentencepiece" role="tab" aria-selected="false">SentencePiece</button>
     </div>
 
     <div id="sub-bpe" class="sub-section" role="tabpanel">
@@ -487,6 +488,8 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
 
     <div id="sub-wordpiece" class="sub-section" role="tabpanel" hidden></div>
 
+    <div id="sub-sentencepiece" class="sub-section" role="tabpanel" hidden></div>
+
   </div>
 
   <footer>Matematický seminář — velké jazykové modely</footer>
@@ -525,13 +528,17 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
 
   function setupTokenizer(sfx, mode){
     // ---------- hledání a zvýraznění v textu ----------
-    // sfx: přípona id ('' pro BPE, '-wp' pro WordPiece); mode: 'bpe' nebo 'wp'
+    // sfx: přípona id ('' pro BPE, '-wp' pro WordPiece, '-sp' pro SentencePiece)
+    // mode: 'bpe', 'wp' nebo 'sp'
+    var single = mode !== 'bpe';   // WordPiece a SentencePiece: jedno políčko, výběr podle poměru
+    var stream = mode === 'sp';    // SentencePiece: mezery jako "_", tokeny mohou zasahovat přes více slov
+    var typeName = {bpe: 'bpe', wp: 'wordpiece', sp: 'sentencepiece'}[mode];
     var article = document.getElementById('clanek' + sfx);
     var caseIn = document.getElementById('in-case' + sfx);
     var fields = [
       {input: document.getElementById('in-find-a' + sfx), out: document.getElementById('find-result-a' + sfx), cls: 'hl-a'}
     ];
-    if(mode !== 'wp'){   // WordPiece má jen jedno políčko
+    if(!single){   // WordPiece a SentencePiece mají jen jedno políčko
       fields.push({input: document.getElementById('in-find-b' + sfx), out: document.getElementById('find-result-b' + sfx), cls: 'hl-b'});
     }
 
@@ -549,9 +556,20 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
       return c.toLowerCase() !== c.toUpperCase() || (c >= '0' && c <= '9');
     }
 
-    // v políčku zůstanou jen znaky slova (žádné mezery ani interpunkce)
+    // SentencePiece: mezery (i nezlomitelné) se nahradí znakem "_"
+    function toStream(str){
+      return str.replace(/\s/g, '_');
+    }
+
+    // v políčku zůstanou jen znaky slova (žádné mezery ani interpunkce);
+    // u SentencePiece zůstanou všechny znaky a napsaná mezera se změní na "_"
     function sanitize(input){
       var v = input.value;
+      if(stream){
+        var t = toStream(v);
+        if(t !== v) input.value = t;
+        return;
+      }
       var out = '';
       for(var i = 0; i < v.length; i++){
         if(isWordChar(v.charAt(i))) out += v.charAt(i);
@@ -577,7 +595,9 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
       var lastBlock = null;
       while(walker.nextNode()){
         var n = walker.currentNode;
+        if(n.parentNode.closest('.toggle-arrow')) continue;   // šipka sbalovacího panelu není součástí textu
         var block = n.parentNode.closest('p, h3, td, th, blockquote, li, .panel-title');
+        if(!block) continue;   // prázdné znaky mezi bloky nejsou text článku
         if(!groups.length || block !== lastBlock){ groups.push([]); lastBlock = block; }
         groups[groups.length - 1].push(n);
       }
@@ -608,7 +628,8 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
         var starts = [];
         nodes.forEach(function(n){ starts.push(full.length); full += n.nodeValue; });
         var hay = cs ? full : lower(full);
-        if(mode === 'wp' && needles[0].length > 1){
+        if(stream) hay = toStream(hay);
+        if(single && needles[0].length > 1){
           if(!splitCounts){
             splitCounts = Object.create(null);
             for(var cut = 1; cut < needles[0].length; cut++){
@@ -665,7 +686,7 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
         var bs = f.out.querySelectorAll('b');
         bs[0].textContent = q;
         bs[1].textContent = String(totals[k]);
-        if(mode === 'wp') renderSplits(f.out, q, splitCounts || Object.create(null), totals[k]);
+        if(single) renderSplits(f.out, q, splitCounts || Object.create(null), totals[k]);
       });
     }
 
@@ -745,6 +766,15 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
         var text = '';
         nodes.forEach(function(n){ text += n.nodeValue; });
         if(!cs) text = lower(text);
+        if(stream){
+          // jeden odstavec / nadpis / buňka = jedna řada znaků, mezery jako "_"
+          text = toStream(text);
+          if(!text) return;
+          if(!(text in freq)){ freq[text] = 0; order.push(text); }
+          freq[text]++;
+          for(var q = 0; q < text.length; q++){ chars[text.charAt(q)] = true; }
+          return;
+        }
         var word = '';
         for(var i = 0; i <= text.length; i++){
           var c = i < text.length ? text.charAt(i) : '';
@@ -801,7 +831,7 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
           var cb = symCounts[parts[1]];
           // BPE: největší #(AB); WordPiece: největší poměr #(AB) / (#(A) · #(B)),
           // porovnáno přesně křížovým násobením (c / (ca·cb) > bestCount / (bestA·bestB))
-          var better = mode === 'wp'
+          var better = single
             ? (best === null || c * bestA * bestB > bestCount * ca * cb)
             : c > bestCount;
           if(better){ best = keys[k]; bestCount = c; bestA = ca; bestB = cb; }
@@ -835,7 +865,7 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
       sum.appendChild(el('b', '', String(size)));
       sum.appendChild(document.createTextNode(' symbolů: ' + initial.length + ' jednotlivých znaků a ' + merges.length + ' sloučení. Korpus: '));
       sum.appendChild(el('b', '', String(order.length)));
-      sum.appendChild(document.createTextNode(' různých slov.'));
+      sum.appendChild(document.createTextNode(stream ? ' různých odstavců a nadpisů.' : ' různých slov.'));
       vocabOut.appendChild(sum);
       var openBtn = el('button', 'btn primary', 'Zobrazit slovník tokenů');
       openBtn.type = 'button';
@@ -859,7 +889,7 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
         var table = el('table', 'theory-table');
         var thead = el('thead');
         var hr = el('tr');
-        var heads = mode === 'wp'
+        var heads = single
           ? ['Krok', 'Dvojice', 'Nový symbol', '#(AB)', '#(A)', '#(B)', '#(AB) / (#(A) · #(B))']
           : ['Krok', 'Dvojice', 'Nový symbol', 'Četnost'];
         heads.forEach(function(h){ hr.appendChild(el('th', 'mono', h)); });
@@ -872,7 +902,7 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
           tr.appendChild(el('td', 'mono', mg.a + ' + ' + mg.b));
           tr.appendChild(el('td', 'mono', mg.sym + (mg.dup ? ' (zápis už ve slovníku je)' : '')));
           tr.appendChild(el('td', 'mono', String(mg.count)));
-          if(mode === 'wp'){
+          if(single){
             tr.appendChild(el('td', 'mono', String(mg.ca)));
             tr.appendChild(el('td', 'mono', String(mg.cb)));
             tr.appendChild(el('td', 'mono', fmtRatio(mg.count / (mg.ca * mg.cb))));
@@ -889,14 +919,14 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
       var note = vocabOut.querySelector('.vocab-note-open');
       if(note) note.remove();
       try{
-        localStorage.setItem('matematika:' + (mode === 'wp' ? 'wordpiece' : 'bpe') + '-slovnik', JSON.stringify({tokens: tokens, target: target, caseSensitive: cs}));
+        localStorage.setItem('matematika:' + typeName + '-slovnik', JSON.stringify({tokens: tokens, target: target, caseSensitive: cs}));
       }catch(e){
         var row = vocabOut.querySelector('.vocab-open');
         var msg = el('p', 'vocab-note vocab-note-open', 'Prohlížeč nepovolil uložit slovník pro novou stránku.');
         row.appendChild(msg);
         return;
       }
-      window.open('slovnik-tokenu.html?typ=' + (mode === 'wp' ? 'wordpiece' : 'bpe'), '_blank');
+      window.open('slovnik-tokenu.html?typ=' + typeName, '_blank');
     }
 
     document.getElementById('btn-vocab' + sfx).addEventListener('click', buildVocab);
@@ -905,29 +935,53 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
     });
   }
 
-  // ---------- WordPiece: kopie sekce BPE (článek, hledání, slovník) s jinými id ----------
-  var wpSection = document.getElementById('sub-wordpiece');
-  var wpClone = document.getElementById('sub-bpe').cloneNode(true);
-  Array.prototype.forEach.call(wpClone.querySelectorAll('[id]'), function(e){ e.id = e.id + '-wp'; });
-  Array.prototype.forEach.call(wpClone.querySelectorAll('label[for]'), function(e){
-    e.setAttribute('for', e.getAttribute('for') + '-wp');
+  // ---------- WordPiece a SentencePiece: kopie sekce BPE (článek, hledání, slovník) s jinými id ----------
+  function makeVariant(sfx, sectionId, o){
+    var section = document.getElementById(sectionId);
+    var clone = document.getElementById('sub-bpe').cloneNode(true);
+    Array.prototype.forEach.call(clone.querySelectorAll('[id]'), function(e){ e.id = e.id + sfx; });
+    Array.prototype.forEach.call(clone.querySelectorAll('label[for]'), function(e){
+      e.setAttribute('for', e.getAttribute('for') + sfx);
+    });
+    var fieldB = clone.querySelector('#in-find-b' + sfx).closest('.field');
+    fieldB.parentNode.removeChild(fieldB);
+    clone.querySelector('label[for="in-find-a' + sfx + '"]').lastChild.textContent = o.label;
+    clone.querySelector('#in-find-a' + sfx).setAttribute('placeholder', o.placeholder);
+    clone.querySelector('.finder .hint').textContent = o.finderHint;
+    clone.querySelector('#vocab-panel' + sfx + ' .panel-title').textContent = o.vocabTitle;
+    clone.querySelector('#vocab-panel' + sfx + ' > .hint').textContent = o.vocabHint;
+    while(clone.firstChild){ section.appendChild(clone.firstChild); }
+  }
+
+  var SPLIT_HINT = 'Pod počtem se vypíše i počet všech částí, ze kterých může řada vzniknout sloučením dvou tokenů, ' +
+    'a hodnota podílu #(AB) / (#(A) · #(B)). Např. pro „abc“ jsou to dvojice „a“ + „bc“ a „ab“ + „c“.';
+  var RATIO_HINT = 'V každém kroku se vybere dvojice sousedních symbolů (A, B) s největším poměrem #(AB) / (#(A) · #(B)), ' +
+    'tedy ta, která se vyskytuje spolu mnohem častěji, než by odpovídalo náhodě, a nahradí se novým symbolem AB. ' +
+    '#(AB) je počet výskytů dvojice vedle sebe, #(A) a #(B) jsou počty výskytů jednotlivých symbolů v aktuálním rozkladu ' +
+    '(počítají se všechny výskyty, i překrývající se dvojice). Při shodě poměru vyhrává dvojice, která se v textu vyskytla dřív. ' +
+    'Velikost písmen se řídí přepínačem výše.';
+
+  makeVariant('-wp', 'sub-wordpiece', {
+    label: 'Řada písmen',
+    placeholder: 'např. th',
+    finderHint: 'Hledá se jen uvnitř jednoho slova (slovo = souvislá řada písmen a číslic; mezery a interpunkci nelze zadat). Překrývající se výskyty se počítají všechny. ' + SPLIT_HINT,
+    vocabTitle: 'Slovník WordPiece',
+    vocabHint: 'Korpusem je text článku níže; slova jsou souvislé řady písmen a číslic. Začíná se slovníkem jednotlivých znaků. ' + RATIO_HINT
   });
-  var fieldB = wpClone.querySelector('#in-find-b-wp').closest('.field');
-  fieldB.parentNode.removeChild(fieldB);
-  wpClone.querySelector('label[for="in-find-a-wp"]').lastChild.textContent = 'Řada písmen';
-  wpClone.querySelector('.finder .hint').textContent =
-    'Hledá se jen uvnitř jednoho slova (slovo = souvislá řada písmen a číslic; mezery a interpunkci nelze zadat). Překrývající se výskyty se počítají všechny. ' +
-    'Pod počtem se vypíše i počet všech částí, ze kterých může řada vzniknout sloučením dvou tokenů, např. pro „abc“ jsou to dvojice „a“ + „bc“ a „ab“ + „c“.';
-  wpClone.querySelector('#vocab-panel-wp .panel-title').textContent = 'Slovník WordPiece';
-  wpClone.querySelector('#vocab-panel-wp > .hint').textContent =
-    'Korpusem je text článku níže; slova jsou souvislé řady písmen a číslic. Začíná se slovníkem jednotlivých znaků. ' +
-    'V každém kroku se vybere dvojice sousedních symbolů (A, B) s největším poměrem #(AB) / (#(A) · #(B)), tedy ta, která se vyskytuje spolu mnohem častěji, než by odpovídalo náhodě, ' +
-    'a nahradí se novým symbolem AB. #(AB) je počet výskytů dvojice vedle sebe, #(A) a #(B) jsou počty výskytů jednotlivých symbolů v aktuálním rozkladu slov ' +
-    '(počítají se všechny výskyty slov, i překrývající se dvojice). Při shodě poměru vyhrává dvojice, která se v textu vyskytla dřív. Velikost písmen se řídí přepínačem výše.';
-  while(wpClone.firstChild){ wpSection.appendChild(wpClone.firstChild); }
+
+  makeVariant('-sp', 'sub-sentencepiece', {
+    label: 'Řada znaků',
+    placeholder: 'např. _th',
+    finderHint: 'Mezery v textu jsou nahrazeny znakem „_“ (do políčka ho napište, napsaná mezera se na „_“ sama převede), takže řada může zasahovat i do více slov. ' +
+      'Interpunkce zůstává v textu jako běžné znaky. Hledá se v rámci jednoho odstavce, nadpisu nebo buňky tabulky. Překrývající se výskyty se počítají všechny. ' + SPLIT_HINT,
+    vocabTitle: 'Slovník SentencePiece',
+    vocabHint: 'Korpusem je text článku níže. Mezery se nahradí znakem „_“ a interpunkce zůstává, takže slova nejsou oddělená a tokeny mohou zasahovat přes více slov. ' +
+      'Každý odstavec, nadpis nebo buňka tabulky je jedna řada znaků. Začíná se slovníkem jednotlivých znaků (včetně „_“). ' + RATIO_HINT
+  });
 
   setupTokenizer('', 'bpe');
   setupTokenizer('-wp', 'wp');
+  setupTokenizer('-sp', 'sp');
 
   // ---------- sbalitelné panely ----------
   function makeCollapsible(panel){
@@ -961,7 +1015,7 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
     });
     panel._open = function(){ if(title.getAttribute('aria-expanded') !== 'true') toggle(); };
   }
-  var panels = document.querySelectorAll('#clanek .panel, #vocab-panel, #clanek-wp .panel, #vocab-panel-wp');
+  var panels = document.querySelectorAll('#clanek .panel, #vocab-panel, #clanek-wp .panel, #vocab-panel-wp, #clanek-sp .panel, #vocab-panel-sp');
   Array.prototype.forEach.call(panels, makeCollapsible);
 
   // odkaz z obsahu rozbalí cílový panel
