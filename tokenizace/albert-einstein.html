@@ -173,7 +173,8 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
 
   <div class="top-tabs">
     <button class="toptab on" id="top-tab-tokenizace" data-tab="tokenizace">Tokenizace</button>
-    <button class="toptab" id="top-tab-trenink" data-tab="trenink">Trénink</button>
+    <button class="toptab" id="top-tab-termdok" data-tab="termdok">Matice term-dokument</button>
+    <button class="toptab" id="top-tab-trenink" data-tab="trenink">PPMI</button>
   </div>
 
   <div id="view-tokenizace" class="tab-section">
@@ -235,6 +236,21 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
 
     <div id="sub-sentencepiece" class="sub-section" role="tabpanel" hidden></div>
 
+  </div>
+
+  <div id="view-termdok" class="tab-section" hidden>
+    <div class="panel">
+      <div class="panel-title">Texty</div>
+      <div class="row" role="group" aria-label="Vzorové texty">
+        <button class="chip on" id="td-sample-0" data-td-sample="0" aria-pressed="true">Text 1 – souvisí s tokenizací</button>
+        <button class="chip" id="td-sample-1" data-td-sample="1" aria-pressed="false">Text 2 – částečně souvisí</button>
+        <button class="chip" id="td-sample-2" data-td-sample="2" aria-pressed="false">Text 3 – nesouvisí</button>
+      </div>
+      <div class="field" style="margin-top:14px">
+        <label for="in-termdok">Vyberte vzorový text nebo vložte libovolně dlouhý vlastní text</label>
+        <textarea id="in-termdok" class="big-text" rows="12" spellcheck="false" autocomplete="off" placeholder="Sem vložte text…"></textarea>
+      </div>
+    </div>
   </div>
 
   <div id="view-trenink" class="tab-section" hidden>
@@ -715,7 +731,7 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
       dlMerges.addEventListener('click', function(){ downloadMerges(merges); });
       openRow.appendChild(dlMerges);
       vocabOut.appendChild(openRow);
-      lastVocab = {merges: merges, tokens: tokens, cs: cs};   // pro matici společného výskytu (karta Trénink)
+      lastVocab = {merges: merges, tokens: tokens, cs: cs};   // pro matici společného výskytu (karta PPMI)
       if(exhausted){
         vocabOut.appendChild(el('p', 'vocab-note', 'Slovník nelze zvětšit na ' + target + ': všechna slova už jsou jediným symbolem.'));
       }
@@ -1325,7 +1341,7 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
       if(e.key === 'Enter'){ e.preventDefault(); buildVocab(); }
     });
 
-    // vlastní text místo článku (využívá program v počítači: karta Trénink)
+    // vlastní text místo článku (využívá program v počítači: karta PPMI)
     function corpusChanged(name, show, custom){
       articleName = name;
       article.hidden = !show;   // vlastní text se rovnou zobrazí, původní článek je výchozí schovaný
@@ -1407,11 +1423,13 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
   setupTokenizer('-wp', 'wp');
   setupTokenizer('-sp', 'sp');
 
-  // ---------- karta Trénink: vzorové texty ----------
+  var trainSamples;
+
+  // ---------- karta PPMI: vzorové texty ----------
   (function(){
     // 1: téma i slova navazují na text z karty Tokenizace (opakují se stejná slova a dvojice slov),
     // 2: částečně souvisí (společná je jen část slov a téma výletu), 3: s tokenizačním textem nesouvisí
-    var samples = [
+    var samples = trainSamples = [
       "V sobotu jsme s kamarády šli lesem na kopec. Šli jsme po cestě a poslouchali, jak zpívají ptáci. Cesta vedla lesem dlouho, ale les voněl a cesta byla pěkná. Když jsme došli k potoku, udělali jsme přestávku. U potoka jsme snědli svačinu a poslouchali ptáky. Potom jsme šli dál lesem po cestě a došli jsme na kopec.\nNa kopci jsme se rozhlédli po kraji. Z kopce byl vidět les, pole, louky i naše ves. Dole pod kopcem jsme viděli cestu, potok i les, kterými jsme šli. Kamarádi ukazovali na ptáky, kteří létali nad lesem, a já ukazoval na potok, který se třpytil pod kopcem. Na kopci jsme zůstali hodinu, a pak jsme šli zpátky lesem po cestě k potoku.\nU potoka jsme se zastavili ještě jednou a snědli poslední svačinu. Ptáci zpívali v lese hlasitě a slyšeli jsme je i na cestě. Domů jsme šli po cestě lesem, unavení, ale šťastní. Kamarádi chtěli jít na kopec zase a já s nimi souhlasil, les, potok i kopec jsou totiž krásné.",
       "Minulý týden jsme s kamarády jeli na výlet do města. Ráno jsme nasedli na vlak a za hodinu jsme byli na nádraží. Z nádraží jsme šli po cestě k muzeu, které stojí na náměstí. U vchodu na nás čekal průvodce, který nám řekl, že prohlídka potrvá dvě hodiny.\nV prvním sále jsme viděli staré hodiny, mapy a obrazy. Průvodce vyprávěl o městě, o jeho historii a o lidech, kteří tu žili. Mapy se mi líbily nejvíc, protože na nich bylo vidět, jak se město měnilo. Kamarádi si fotili obrazy a psali si poznámky do sešitu. Po prohlídce jsme měli hodinu volna a koupili jsme si svačinu v malé pekárně.\nOdpoledne jsme se prošli kolem řeky a pak jsme šli zpátky na nádraží. Vlak odjížděl v pět hodin, a tak jsme si sedli na lavičku a čekali. Cesta domů ubíhala rychle, protože jsme si povídali o všem, co jsme ten den viděli. Domů jsme dojeli unavení, ale spokojení, a už se těšíme na další výlet.",
       "Domácí chléb se peče z mouky, vody, soli a kvasu. Nejdřív je třeba smíchat mouku s vodou a nechat těsto půl hodiny odpočívat. Potom se přidá sůl a kvas a těsto se několik minut hněte. Hotové těsto se přikryje utěrkou a nechá se kynout na teplém místě. Kynutí trvá obvykle dvě až tři hodiny, podle teploty v kuchyni.\nKdyž těsto zdvojnásobí objem, přendá se na pomoučený stůl a tvaruje se do bochníku. Bochník se vloží do ošatky a znovu se nechá kynout. Trouba se předehřeje na vysokou teplotu a do spodního plechu se nalije trocha vody, aby vznikla pára. Pára dělá kůrku křupavou a lesklou. Chléb se peče asi čtyřicet minut, dokud nezíská zlatou barvu.\nUpečený chléb se nesmí krájet hned, protože střídka je uvnitř ještě horká a vlhká. Nejlepší je počkat alespoň hodinu, až bochník vychladne. Pak se dá nakrájet na tlusté krajíce a namazat máslem. Domácí chléb vydrží několik dnů, když se uloží do plátěného pytlíku. Kdo chce, může do těsta přidat semínka, ořechy nebo sušené ovoce."
@@ -1434,7 +1452,25 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
     pick(0);
   })();
 
-  // ---------- karta Trénink: matice společného výskytu ----------
+  // ---------- karta Matice term-dokument: vzorové texty ----------
+  (function(){
+    var area = document.getElementById('in-termdok');
+    var btns = Array.prototype.slice.call(document.querySelectorAll('[data-td-sample]'));
+    function pick(k){
+      area.value = trainSamples[k];
+      btns.forEach(function(b){
+        var on = parseInt(b.getAttribute('data-td-sample'), 10) === k;
+        b.classList.toggle('on', on);
+        b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+    }
+    btns.forEach(function(b){
+      b.addEventListener('click', function(){ pick(parseInt(b.getAttribute('data-td-sample'), 10)); });
+    });
+    pick(0);
+  })();
+
+  // ---------- karta PPMI: matice společného výskytu ----------
   (function(){
     var algo = 0;
     var algoBtns = Array.prototype.slice.call(document.querySelectorAll('[data-algo]'));
