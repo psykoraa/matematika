@@ -138,6 +138,7 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
 .vocab-scroll .theory-table.cooc tr td.hl-cell{ background:var(--accent); color:var(--accent-ink); opacity:1; outline:2px solid var(--ink); outline-offset:-2px; }
 .vocab-scroll.clickable td{ cursor:pointer; }
 .ppmi-calc{ margin-top:12px; }
+.ppmi-calc-math{ overflow-x:auto; overflow-y:hidden; }
 .ppmi-calc-line{ font-family:'IBM Plex Mono', monospace; font-size:0.85rem; overflow-wrap:anywhere; }
 .ppmi-out{ margin-top:6px; }
 
@@ -1066,9 +1067,23 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
       box.appendChild(calc);
       out.appendChild(box);
 
-      // číslo bez zbytečných desetinných míst, desetinná čárka
+      // číslo bez zbytečných desetinných míst, desetinná čárka (v TeXu v závorkách, aby za ní nebyla mezera)
       function num(x){ return String(Number(x.toPrecision(4))).replace('.', ',').replace('e', 'E'); }
-      function neg(t){ return t.replace('-', '\u2212'); }
+      function texNum(x){ return String(Number(x.toPrecision(4))).replace('.', '{,}'); }
+
+      // vzorec v TeXu (KaTeX); když knihovna není k dispozici, zobrazí se prostý text
+      function mathBlock(tex, plain){
+        var d = el('div', 'ppmi-calc-math');
+        if(window.katex){
+          try{
+            window.katex.render(tex, d, {displayMode: true, throwOnError: false, strict: 'ignore'});
+            return d;
+          }catch(e){}
+        }
+        d.className = 'ppmi-calc-line';
+        d.textContent = plain;
+        return d;
+      }
 
       // konkrétní výpočet hodnoty PPMI na pozici (w, c)
       function showCalc(w, c, visible){
@@ -1083,17 +1098,26 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
         head.appendChild(el('span', 'tok', tokens[c]));
         head.appendChild(document.createTextNode(':'));
         calc.appendChild(head);
-        calc.appendChild(el('p', 'vocab-sum', 'M(w, c) = ' + mwc + ', součet řádku w = ' + rw + ', součet řádku c = ' + rc + ', m = ' + m + '.'));
-        var line;
+        calc.appendChild(mathBlock(
+          'M(w,c)=' + mwc + ',\\quad r_w=\\sum_y M(w,y)=' + rw + ',\\quad r_c=\\sum_y M(c,y)=' + rc + ',\\quad m=\\sum_{x,y}M(x,y)=' + m,
+          'M(w, c) = ' + mwc + ', součet řádku w = ' + rw + ', součet řádku c = ' + rc + ', m = ' + m + '.'));
         if(!mwc){
-          line = 'M(w, c) = 0, takže podíl je 0, logaritmus nuly neexistuje a PPMI(w, c) = 0.';
+          calc.appendChild(mathBlock(
+            'M(w,c)=0\\ \\Rightarrow\\ \\mathrm{PPMI}(w,c)=0',
+            'M(w, c) = 0, takže podíl je 0, logaritmus nuly neexistuje a PPMI(w, c) = 0.'));
+          calc.appendChild(el('p', 'hint', 'Pro M(w, c) = 0 je podíl nulový a logaritmus nuly neexistuje, proto je PPMI(w, c) = 0.'));
         } else {
           var q = mwc * m / (rw * rc);
           var ln = Math.log(q);
-          line = 'PPMI(w, c) = max(0; ln( ' + mwc + ' · ' + m + ' / (' + rw + ' · ' + rc + ') )) = max(0; ln( ' + (mwc * m) + ' / ' + (rw * rc) + ' )) = max(0; ln ' + num(q) + ') = max(0; ' + neg(ln.toFixed(3).replace('.', ',')) + ') = ' + fmtPpmi(Math.max(0, ln)) + '.';
+          var lnTex = ln.toFixed(3).replace('.', '{,}');
+          var res = fmtPpmi(Math.max(0, ln));
+          calc.appendChild(mathBlock(
+            '\\begin{aligned}\\mathrm{PPMI}(w,c)&=\\max\\!\\left(0,\\ \\ln\\frac{M(w,c)\\cdot m}{r_w\\cdot r_c}\\right)\\\\'
+            + '&=\\max\\!\\left(0,\\ \\ln\\frac{' + mwc + '\\cdot ' + m + '}{' + rw + '\\cdot ' + rc + '}\\right)'
+            + '=\\max\\!\\left(0,\\ \\ln\\frac{' + (mwc * m) + '}{' + (rw * rc) + '}\\right)\\\\'
+            + '&=\\max\\!\\left(0,\\ \\ln ' + texNum(q) + '\\right)=\\max\\!\\left(0,\\ ' + lnTex + '\\right)=' + res.replace(',', '{,}') + '\\end{aligned}',
+            'PPMI(w, c) = max(0; ln( ' + mwc + ' · ' + m + ' / (' + rw + ' · ' + rc + ') )) = max(0; ln( ' + (mwc * m) + ' / ' + (rw * rc) + ' )) = max(0; ln ' + num(q) + ') = max(0; ' + ln.toFixed(3).replace('.', ',').replace('-', '−') + ') = ' + res + '.'));
         }
-        var lineEl = el('p', 'vocab-sum ppmi-calc-line', line);
-        calc.appendChild(lineEl);
         if(!visible){
           calc.appendChild(el('p', 'vocab-note', 'Řádek nebo sloupec této pozice není v aktuálním náhledu matice společného výskytu. Zvolte tam „Celá matice“ nebo odpovídající náhled.'));
         }
