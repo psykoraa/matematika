@@ -226,11 +226,14 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
   <div id="view-trenink" class="tab-section" hidden>
     <div class="panel">
       <div class="panel-title">Trénovací text</div>
-      <div class="field">
-        <label for="in-trenink">Vložte libovolně dlouhý text</label>
-        <textarea id="in-trenink" class="big-text" rows="12" spellcheck="false" autocomplete="off" placeholder="Sem vložte text…">Včera jsme se s kamarády vypravili na výlet do lesa za naší vsí. Ráno bylo chladné, ale slunce brzy zahřálo celou krajinu. Šli jsme po úzké cestě mezi stromy a poslouchali, jak zpívají ptáci. U potoka jsme si udělali krátkou přestávku a snědli první svačinu.
-
-Odpoledne jsme došli na kopec, odkud byl vidět celý kraj. Pod námi se rozkládala pole, louky a malé domky s červenými střechami. Bylo to krásné místo, a proto jsme tam zůstali téměř hodinu. Domů jsme se vrátili unavení, ale šťastní.</textarea>
+      <div class="row" role="group" aria-label="Vzorové trénovací texty">
+        <button class="chip on" id="train-sample-0" data-sample="0" aria-pressed="true">Text 1 – souvisí s tokenizací</button>
+        <button class="chip" id="train-sample-1" data-sample="1" aria-pressed="false">Text 2 – částečně souvisí</button>
+        <button class="chip" id="train-sample-2" data-sample="2" aria-pressed="false">Text 3 – nesouvisí</button>
+      </div>
+      <div class="field" style="margin-top:14px">
+        <label for="in-trenink">Vyberte vzorový text nebo vložte libovolně dlouhý vlastní text</label>
+        <textarea id="in-trenink" class="big-text" rows="12" spellcheck="false" autocomplete="off" placeholder="Sem vložte text…"></textarea>
       </div>
     </div>
 
@@ -1058,6 +1061,33 @@ Odpoledne jsme došli na kopec, odkud byl vidět celý kraj. Pod námi se rozkl�
   setupTokenizer('', 'bpe');
   setupTokenizer('-wp', 'wp');
   setupTokenizer('-sp', 'sp');
+
+  // ---------- karta Trénink: vzorové texty ----------
+  (function(){
+    // 1: téma i slova navazují na text z karty Tokenizace (opakují se stejná slova a dvojice slov),
+    // 2: částečně souvisí (společná je jen část slov a téma výletu), 3: s tokenizačním textem nesouvisí
+    var samples = [
+      "V sobotu jsme s kamarády šli lesem na kopec. Šli jsme po cestě a poslouchali, jak zpívají ptáci. Cesta vedla lesem dlouho, ale les voněl a cesta byla pěkná. Když jsme došli k potoku, udělali jsme přestávku. U potoka jsme snědli svačinu a poslouchali ptáky. Potom jsme šli dál lesem po cestě a došli jsme na kopec.\nNa kopci jsme se rozhlédli po kraji. Z kopce byl vidět les, pole, louky i naše ves. Dole pod kopcem jsme viděli cestu, potok i les, kterými jsme šli. Kamarádi ukazovali na ptáky, kteří létali nad lesem, a já ukazoval na potok, který se třpytil pod kopcem. Na kopci jsme zůstali hodinu, a pak jsme šli zpátky lesem po cestě k potoku.\nU potoka jsme se zastavili ještě jednou a snědli poslední svačinu. Ptáci zpívali v lese hlasitě a slyšeli jsme je i na cestě. Domů jsme šli po cestě lesem, unavení, ale šťastní. Kamarádi chtěli jít na kopec zase a já s nimi souhlasil, les, potok i kopec jsou totiž krásné.",
+      "Minulý týden jsme s kamarády jeli na výlet do města. Ráno jsme nasedli na vlak a za hodinu jsme byli na nádraží. Z nádraží jsme šli po cestě k muzeu, které stojí na náměstí. U vchodu na nás čekal průvodce, který nám řekl, že prohlídka potrvá dvě hodiny.\nV prvním sále jsme viděli staré hodiny, mapy a obrazy. Průvodce vyprávěl o městě, o jeho historii a o lidech, kteří tu žili. Mapy se mi líbily nejvíc, protože na nich bylo vidět, jak se město měnilo. Kamarádi si fotili obrazy a psali si poznámky do sešitu. Po prohlídce jsme měli hodinu volna a koupili jsme si svačinu v malé pekárně.\nOdpoledne jsme se prošli kolem řeky a pak jsme šli zpátky na nádraží. Vlak odjížděl v pět hodin, a tak jsme si sedli na lavičku a čekali. Cesta domů ubíhala rychle, protože jsme si povídali o všem, co jsme ten den viděli. Domů jsme dojeli unavení, ale spokojení, a už se těšíme na další výlet.",
+      "Domácí chléb se peče z mouky, vody, soli a kvasu. Nejdřív je třeba smíchat mouku s vodou a nechat těsto půl hodiny odpočívat. Potom se přidá sůl a kvas a těsto se několik minut hněte. Hotové těsto se přikryje utěrkou a nechá se kynout na teplém místě. Kynutí trvá obvykle dvě až tři hodiny, podle teploty v kuchyni.\nKdyž těsto zdvojnásobí objem, přendá se na pomoučený stůl a tvaruje se do bochníku. Bochník se vloží do ošatky a znovu se nechá kynout. Trouba se předehřeje na vysokou teplotu a do spodního plechu se nalije trocha vody, aby vznikla pára. Pára dělá kůrku křupavou a lesklou. Chléb se peče asi čtyřicet minut, dokud nezíská zlatou barvu.\nUpečený chléb se nesmí krájet hned, protože střídka je uvnitř ještě horká a vlhká. Nejlepší je počkat alespoň hodinu, až bochník vychladne. Pak se dá nakrájet na tlusté krajíce a namazat máslem. Domácí chléb vydrží několik dnů, když se uloží do plátěného pytlíku. Kdo chce, může do těsta přidat semínka, ořechy nebo sušené ovoce."
+];
+    var area = document.getElementById('in-trenink');
+    var btns = Array.prototype.slice.call(document.querySelectorAll('[data-sample]'));
+    function pick(k){
+      area.value = samples[k];
+      area.dispatchEvent(new Event('input', {bubbles: true}));
+      btns.forEach(function(b){
+        var on = parseInt(b.getAttribute('data-sample'), 10) === k;
+        b.classList.toggle('on', on);
+        b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+      document.getElementById('cooc-out').innerHTML = '';
+    }
+    btns.forEach(function(b){
+      b.addEventListener('click', function(){ pick(parseInt(b.getAttribute('data-sample'), 10)); });
+    });
+    pick(0);
+  })();
 
   // ---------- karta Trénink: matice společného výskytu ----------
   (function(){
