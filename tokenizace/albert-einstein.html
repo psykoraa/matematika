@@ -944,13 +944,13 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
     }
 
     // PPMI: pro každé (w, c) ln( M(w,c) · m / (Σ řádku w · Σ řádku c) ), záporné hodnoty (a nuly v M) jako 0;
-    // m je počet všech pozic matice (n · n)
+    // m je součet všech hodnot matice M
     function renderPpmi(out, tokens, r, delta){
       out.innerHTML = '';
       var n = r.n;
-      var m = n * n;
       var rowSum = new Array(n).fill(0);
-      r.counts.forEach(function(val, key){ rowSum[Math.floor(key / n)] += val; });
+      var m = 0;   // součet všech hodnot matice M
+      r.counts.forEach(function(val, key){ rowSum[Math.floor(key / n)] += val; m += val; });
       var vals = new Map();
       r.counts.forEach(function(val, key){
         var w = Math.floor(key / n);
@@ -960,9 +960,9 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
       });
       var box = el('div', 'cooc-box');
       box.appendChild(el('p', 'vocab-sum', 'Matice PPMI:'));
-      box.appendChild(el('p', 'hint', 'Na pozici (w, c) je ln( M(w, c) · m / (součet řádku w · součet řádku c) ), kde M je matice společného výskytu a m je počet všech pozic matice. Záporná hodnota (a hodnota pro M(w, c) = 0) se nahradí nulou.'));
+      box.appendChild(el('p', 'hint', 'Na pozici (w, c) je ln( M(w, c) · m / (součet řádku w · součet řádku c) ), kde M je matice společného výskytu a m je součet všech jejích hodnot. Záporná hodnota (a hodnota pro M(w, c) = 0) se nahradí nulou.'));
       var sum = el('p', 'vocab-sum');
-      sum.appendChild(document.createTextNode('m = ' + n + ' · ' + n + ' = '));
+      sum.appendChild(document.createTextNode('m = součet všech hodnot matice = '));
       sum.appendChild(el('b', '', String(m)));
       sum.appendChild(document.createTextNode('; kladných hodnot v matici PPMI je ' + vals.size + '.'));
       box.appendChild(sum);
