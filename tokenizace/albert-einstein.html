@@ -133,6 +133,11 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
 .cooc-box{ margin-top:18px; padding-top:14px; border-top:1px solid var(--line); }
 .cooc-box .hint{ font-size:0.78rem; font-style:italic; color:var(--ink-soft); margin:0 0 10px; }
 
+.vocab-scroll .theory-table.cooc tr td.cell-down{ background:rgba(179,57,43,0.30); color:var(--ink); opacity:1; }
+.vocab-scroll .theory-table.cooc tr td.cell-up{ background:rgba(40,121,79,0.30); color:var(--ink); opacity:1; }
+.ppmi-chip{ display:inline-block; padding:1px 8px; border-radius:6px; font-weight:600; }
+.ppmi-chip-down{ background:rgba(179,57,43,0.30); }
+.ppmi-chip-up{ background:rgba(40,121,79,0.30); }
 .vocab-scroll .theory-table.cooc tr td.hl-line{ background:rgba(201,88,31,0.18); }
 .vocab-scroll .theory-table.cooc tr th.hl-line{ background:rgba(201,88,31,0.38); }
 .vocab-scroll .theory-table.cooc tr td.hl-cell{ background:var(--accent); color:var(--accent-ink); opacity:1; outline:2px solid var(--ink); outline-offset:-2px; }
@@ -954,7 +959,8 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
           html.push('<tr><th>' + esc(tokens[w]) + '</th>');
           order.forEach(function(c){
             var x = vals.get(w * n + c) || 0;
-            html.push('<td class="' + (x ? 'mono' : 'mono zero') + '">' + fmt(x) + '</td>');
+            var extra = opts.cellClass ? opts.cellClass(w * n + c) : '';
+            html.push('<td class="' + (x ? 'mono' : 'mono zero') + (extra ? ' ' + extra : '') + '">' + fmt(x) + '</td>');
           });
           html.push('</tr>');
         });
@@ -1024,56 +1030,101 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
 
     // PPMI: pro každé (w, c) ln( M(w,c) · m / (Σ řádku w · Σ sloupce c) ), záporné hodnoty (a nuly v M) jako 0;
     // m je součet všech hodnot matice M
+    var PPMI_ALPHA = 0.75;   // vyhlazení kontextového rozdělení: #(c)^α
+
     function renderPpmi(out, tokens, r, delta, coocCtl){
       out.innerHTML = '';
       var n = r.n;
       var rowSum = new Array(n).fill(0);
-      var m = 0;   // součet všech hodnot matice M
       var colSum = new Array(n).fill(0);
+      var m = 0;   // součet všech hodnot matice M
       r.counts.forEach(function(val, key){ rowSum[Math.floor(key / n)] += val; colSum[key % n] += val; m += val; });
-      var vals = new Map();
+      // součty sloupců umocněné na α a jejich součet (vyhlazené rozdělení kontextu)
+      var sAlpha = colSum.map(function(sv){ return Math.pow(sv, PPMI_ALPHA); });
+      var sAlphaSum = sAlpha.reduce(function(x, y){ return x + y; }, 0);
+      // nevyhlazená: ln( M·m / (r_w·s_c) ); vyhlazená: ln( M·Σ s^α / (r_w·s_c^α) ); záporné hodnoty jako 0
+      var plain = new Map();
+      var smooth = new Map();
       r.counts.forEach(function(val, key){
         var w = Math.floor(key / n);
         var c = key % n;
         var x = Math.log(val * m / (rowSum[w] * colSum[c]));
-        if(x > 0) vals.set(key, x);
+        if(x > 0) plain.set(key, x);
+        var y = Math.log(val * sAlphaSum / (rowSum[w] * sAlpha[c]));
+        if(y > 0) smooth.set(key, y);
       });
+      // změna oproti nevyhlazené matici: 'down' (zmenšení), 'up' (zvětšení), '' (beze změny)
+      var EPS = 1e-12;
+      function change(key){
+        var d = (smooth.get(key) || 0) - (plain.get(key) || 0);
+        return d < -EPS ? 'down' : (d > EPS ? 'up' : '');
+      }
+      var downCount = 0;
+      var upCount = 0;
+      var seen = new Set();
+      [plain, smooth].forEach(function(mp){
+        mp.forEach(function(v, key){
+          if(seen.has(key)) return;
+          seen.add(key);
+          var ch = change(key);
+          if(ch === 'down') downCount++;
+          else if(ch === 'up') upCount++;
+        });
+      });
+
+      var smoothed = false;   // zobrazená varianta
+      var sel = null;         // vybraná pozice {w, c}
+
       var box = el('div', 'cooc-box');
       box.appendChild(el('p', 'vocab-sum', 'Matice PPMI:'));
-      box.appendChild(el('p', 'hint', 'Na pozici (w, c) je ln( M(w, c) · m / (součet řádku w · součet sloupce c) ), kde M je matice společného výskytu a m je součet všech jejích hodnot. Záporná hodnota (a hodnota pro M(w, c) = 0) se nahradí nulou.'));
+      var modeRow = el('div', 'row');
+      modeRow.setAttribute('role', 'group');
+      modeRow.setAttribute('aria-label', 'Varianta matice PPMI');
+      var plainBtn = el('button', 'chip on', 'Nevyhlazená');
+      var smoothBtn = el('button', 'chip', 'Vyhlazená (α = 0,75)');
+      plainBtn.type = smoothBtn.type = 'button';
+      plainBtn.id = 'ppmi-variant-plain';
+      smoothBtn.id = 'ppmi-variant-smooth';
+      modeRow.appendChild(plainBtn);
+      modeRow.appendChild(smoothBtn);
+      modeRow.style.marginBottom = '10px';
+      box.appendChild(modeRow);
+      var note = el('div', 'ppmi-note');
+      box.appendChild(note);
       var sum = el('p', 'vocab-sum');
-      sum.appendChild(document.createTextNode('m = součet všech hodnot matice = '));
-      sum.appendChild(el('b', '', String(m)));
-      sum.appendChild(document.createTextNode('; kladných hodnot v matici PPMI je ' + vals.size + '.'));
       box.appendChild(sum);
       var dl = el('div', 'vocab-open');
       var dlBtn = el('button', 'btn', 'Stáhnout matici PPMI (.tsv)');
       dlBtn.type = 'button';
       dlBtn.addEventListener('click', function(){
-        downloadMatrix('ppmi-' + typeName + '-delta' + delta + '.tsv', tokens, n, vals, fmtTsv);
+        downloadMatrix('ppmi' + (smoothed ? '-vyhlazena' : '') + '-' + typeName + '-delta' + delta + '.tsv', tokens, n, smoothed ? smooth : plain, fmtTsv);
       });
       dl.appendChild(dlBtn);
       box.appendChild(dl);
+      var legend = el('p', 'vocab-sum ppmi-legend');
+      box.appendChild(legend);
       var view = el('div', 'matrix-view');
       box.appendChild(view);
       var calc = el('div', 'ppmi-calc');
       calc.setAttribute('aria-live', 'polite');
-      calc.appendChild(el('p', 'hint', 'Kliknutím na buňku matice PPMI se v matici společného výskytu zvýrazní její řádek a sloupec a tady se ukáže výpočet.'));
-      var ppmiCtl = matrixView(view, tokens, n, vals, fmtPpmi, 'ppmi', {onCell: function(w, c){
+      box.appendChild(calc);
+      out.appendChild(box);
+
+      var ppmiCtl = null;
+      function onCell(w, c){
+        sel = {w: w, c: c};
         ppmiCtl.highlight(w, c, false, false);
         var visible = coocCtl.reveal(w, c);
         coocCtl.highlight(w, c, true, true);
         showCalc(w, c, visible);
-      }});
-      box.appendChild(calc);
-      out.appendChild(box);
+      }
 
       // číslo bez zbytečných desetinných míst, desetinná čárka (v TeXu v závorkách, aby za ní nebyla mezera)
       function num(x){ return String(Number(x.toPrecision(4))).replace('.', ',').replace('e', 'E'); }
       function texNum(x){ return String(Number(x.toPrecision(4))).replace('.', '{,}'); }
 
       // vzorec v TeXu (KaTeX); když knihovna není k dispozici, zobrazí se prostý text
-      function mathBlock(tex, plain){
+      function mathBlock(tex, plainText){
         var d = el('div', 'ppmi-calc-math');
         if(window.katex){
           try{
@@ -1082,14 +1133,71 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
           }catch(e){}
         }
         d.className = 'ppmi-calc-line';
-        d.textContent = plain;
+        d.textContent = plainText;
         return d;
       }
 
-      // konkrétní výpočet hodnoty PPMI na pozici (w, c)
+      // popis zobrazené varianty, počet kladných hodnot a legenda barev
+      function renderHeader(){
+        note.innerHTML = '';
+        if(!smoothed){
+          note.appendChild(el('p', 'hint', 'Na pozici (w, c) je ln( M(w, c) · m / (součet řádku w · součet sloupce c) ), kde M je matice společného výskytu a m je součet všech jejích hodnot. Záporná hodnota (a hodnota pro M(w, c) = 0) se nahradí nulou.'));
+        } else {
+          note.appendChild(el('p', 'hint', 'Vyhlazení kontextového rozdělení: pravděpodobnost kontextu c se místo s_c / m počítá jako s_c^α / Σ s_x^α s α = 0,75, takže vzácné kontexty mají větší váhu a jejich PPMI klesá. Záporná hodnota (a hodnota pro M(w, c) = 0) se nahradí nulou.'));
+          note.appendChild(mathBlock(
+            '\\mathrm{PPMI}_\\alpha(w,c)=\\max\\!\\left(0,\\ \\ln\\frac{M(w,c)\\cdot\\sum_x s_x^{\\alpha}}{r_w\\cdot s_c^{\\alpha}}\\right),\\qquad \\alpha=0{,}75',
+            'PPMI_α(w, c) = max(0; ln( M(w, c) · Σ s_x^α / (r_w · s_c^α) )), α = 0,75'));
+        }
+        sum.innerHTML = '';
+        if(!smoothed){
+          sum.appendChild(document.createTextNode('m = součet všech hodnot matice = '));
+          sum.appendChild(el('b', '', String(m)));
+        } else {
+          sum.appendChild(document.createTextNode('Σ s_x^α = '));
+          sum.appendChild(el('b', '', num(sAlphaSum).replace('.', ',')));
+        }
+        sum.appendChild(document.createTextNode('; kladných hodnot v matici PPMI je ' + (smoothed ? smooth : plain).size + '.'));
+        legend.innerHTML = '';
+        legend.hidden = !smoothed;
+        if(smoothed){
+          legend.appendChild(el('span', 'ppmi-chip ppmi-chip-down', 'červeně'));
+          legend.appendChild(document.createTextNode(' hodnota se oproti nevyhlazené matici zmenšila (' + downCount + '×), '));
+          legend.appendChild(el('span', 'ppmi-chip ppmi-chip-up', 'zeleně'));
+          legend.appendChild(document.createTextNode(' zvětšila (' + upCount + '×); beze změny zůstávají ostatní.'));
+        }
+      }
+
+      function renderView(){
+        view.innerHTML = '';
+        ppmiCtl = matrixView(view, tokens, n, smoothed ? smooth : plain, fmtPpmi, 'ppmi', {
+          onCell: onCell,
+          cellClass: smoothed ? function(key){ var ch = change(key); return ch ? 'cell-' + ch : ''; } : null
+        });
+        if(sel) ppmiCtl.highlight(sel.w, sel.c, false, false);
+      }
+
+      function setVariant(sm){
+        smoothed = sm;
+        plainBtn.classList.toggle('on', !sm);
+        smoothBtn.classList.toggle('on', sm);
+        plainBtn.setAttribute('aria-pressed', sm ? 'false' : 'true');
+        smoothBtn.setAttribute('aria-pressed', sm ? 'true' : 'false');
+        renderHeader();
+        renderView();
+        if(sel) showCalc(sel.w, sel.c, coocCtl.has(sel.w, sel.c));
+        else {
+          calc.innerHTML = '';
+          calc.appendChild(el('p', 'hint', 'Kliknutím na buňku matice PPMI se v matici společného výskytu zvýrazní její řádek a sloupec a tady se ukáže výpočet.'));
+        }
+      }
+      plainBtn.addEventListener('click', function(){ setVariant(false); });
+      smoothBtn.addEventListener('click', function(){ setVariant(true); });
+
+      // konkrétní výpočet hodnoty PPMI na pozici (w, c) pro zobrazenou variantu
       function showCalc(w, c, visible){
         calc.innerHTML = '';
-        var mwc = r.counts.get(w * n + c) || 0;
+        var key = w * n + c;
+        var mwc = r.counts.get(key) || 0;
         var rw = rowSum[w];
         var rc = colSum[c];
         var head = el('p', 'vocab-sum');
@@ -1099,30 +1207,54 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
         head.appendChild(el('span', 'tok', tokens[c]));
         head.appendChild(document.createTextNode(':'));
         calc.appendChild(head);
-        calc.appendChild(mathBlock(
-          'M(w,c)=' + mwc + ',\\quad r_w=\\sum_y M(w,y)=' + rw + ',\\quad s_c=\\sum_y M(y,c)=' + rc + ',\\quad m=\\sum_{x,y}M(x,y)=' + m,
-          'M(w, c) = ' + mwc + ', součet řádku w = ' + rw + ', součet sloupce c = ' + rc + ', m = ' + m + '.'));
+        var common = 'M(w,c)=' + mwc + ',\\quad r_w=\\sum_y M(w,y)=' + rw + ',\\quad s_c=\\sum_y M(y,c)=' + rc;
+        var commonPlain = 'M(w, c) = ' + mwc + ', součet řádku w = ' + rw + ', součet sloupce c = ' + rc;
+        if(!smoothed){
+          calc.appendChild(mathBlock(common + ',\\quad m=\\sum_{x,y}M(x,y)=' + m, commonPlain + ', m = ' + m + '.'));
+        } else {
+          calc.appendChild(mathBlock(
+            common + ',\\quad s_c^{\\alpha}=' + rc + '^{0{,}75}=' + texNum(sAlpha[c]) + ',\\quad \\sum_x s_x^{\\alpha}=' + texNum(sAlphaSum),
+            commonPlain + ', s_c^α = ' + rc + '^0,75 = ' + num(sAlpha[c]) + ', Σ s_x^α = ' + num(sAlphaSum) + '.'));
+        }
+        var tag = smoothed ? '\\alpha' : '';
+        var tagPlain = smoothed ? '_α' : '';
         if(!mwc){
           calc.appendChild(mathBlock(
-            'M(w,c)=0\\ \\Rightarrow\\ \\mathrm{PPMI}(w,c)=0',
-            'M(w, c) = 0, takže podíl je 0, logaritmus nuly neexistuje a PPMI(w, c) = 0.'));
+            'M(w,c)=0\\ \\Rightarrow\\ \\mathrm{PPMI}' + (smoothed ? '_\\alpha' : '') + '(w,c)=0',
+            'M(w, c) = 0, takže podíl je 0, logaritmus nuly neexistuje a PPMI' + tagPlain + '(w, c) = 0.'));
           calc.appendChild(el('p', 'hint', 'Pro M(w, c) = 0 je podíl nulový a logaritmus nuly neexistuje, proto je PPMI(w, c) = 0.'));
         } else {
-          var q = mwc * m / (rw * rc);
+          var numer = smoothed ? mwc * sAlphaSum : mwc * m;
+          var denom = smoothed ? rw * sAlpha[c] : rw * rc;
+          var q = numer / denom;
           var ln = Math.log(q);
           var lnTex = ln.toFixed(3).replace('.', '{,}');
           var res = fmtPpmi(Math.max(0, ln));
+          var top = smoothed ? '\\sum_x s_x^{\\alpha}' : 'm';
+          var sc = smoothed ? 's_c^{\\alpha}' : 's_c';
+          var topNum = smoothed ? texNum(sAlphaSum) : String(m);
+          var scNum = smoothed ? texNum(sAlpha[c]) : String(rc);
           calc.appendChild(mathBlock(
-            '\\begin{aligned}\\mathrm{PPMI}(w,c)&=\\max\\!\\left(0,\\ \\ln\\frac{M(w,c)\\cdot m}{r_w\\cdot s_c}\\right)\\\\'
-            + '&=\\max\\!\\left(0,\\ \\ln\\frac{' + mwc + '\\cdot ' + m + '}{' + rw + '\\cdot ' + rc + '}\\right)'
-            + '=\\max\\!\\left(0,\\ \\ln\\frac{' + (mwc * m) + '}{' + (rw * rc) + '}\\right)\\\\'
+            '\\begin{aligned}\\mathrm{PPMI}' + (smoothed ? '_\\alpha' : '') + '(w,c)&=\\max\\!\\left(0,\\ \\ln\\frac{M(w,c)\\cdot ' + top + '}{r_w\\cdot ' + sc + '}\\right)\\\\'
+            + '&=\\max\\!\\left(0,\\ \\ln\\frac{' + mwc + '\\cdot ' + topNum + '}{' + rw + '\\cdot ' + scNum + '}\\right)'
+            + '=\\max\\!\\left(0,\\ \\ln\\frac{' + texNum(numer) + '}{' + texNum(denom) + '}\\right)\\\\'
             + '&=\\max\\!\\left(0,\\ \\ln ' + texNum(q) + '\\right)=\\max\\!\\left(0,\\ ' + lnTex + '\\right)=' + res.replace(',', '{,}') + '\\end{aligned}',
-            'PPMI(w, c) = max(0; ln( ' + mwc + ' · ' + m + ' / (' + rw + ' · ' + rc + ') )) = max(0; ln( ' + (mwc * m) + ' / ' + (rw * rc) + ' )) = max(0; ln ' + num(q) + ') = max(0; ' + ln.toFixed(3).replace('.', ',').replace('-', '−') + ') = ' + res + '.'));
+            'PPMI' + tagPlain + '(w, c) = max(0; ln( ' + mwc + ' · ' + (smoothed ? num(sAlphaSum) : m) + ' / (' + rw + ' · ' + (smoothed ? num(sAlpha[c]) : rc) + ') )) = max(0; ln( ' + num(numer) + ' / ' + num(denom) + ' )) = max(0; ln ' + num(q) + ') = max(0; ' + ln.toFixed(3).replace('.', ',').replace('-', '−') + ') = ' + res + '.'));
+        }
+        if(smoothed){
+          var ch = change(key);
+          var cmp = el('p', 'vocab-sum');
+          cmp.appendChild(document.createTextNode('Nevyhlazená hodnota: ' + fmtPpmi(plain.get(key) || 0) + ', vyhlazená: ' + fmtPpmi(smooth.get(key) || 0) + ' – '));
+          cmp.appendChild(el('span', ch ? 'ppmi-chip ppmi-chip-' + ch : '', ch === 'down' ? 'zmenšení' : (ch === 'up' ? 'zvětšení' : 'beze změny')));
+          cmp.appendChild(document.createTextNode('.'));
+          calc.appendChild(cmp);
         }
         if(!visible){
           calc.appendChild(el('p', 'vocab-note', 'Řádek nebo sloupec této pozice není v aktuálním náhledu matice společného výskytu. Zvolte tam „Celá matice“ nebo odpovídající náhled.'));
         }
       }
+
+      setVariant(false);
     }
 
     // hodnota PPMI na obrazovce: tři desetinná místa s čárkou, 0 beze změny
