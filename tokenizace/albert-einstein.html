@@ -843,31 +843,80 @@ Odpoledne jsme došli na kopec, odkud byl vidět celý kraj. Pod námi se rozkl�
       dl.appendChild(dlBtn);
       out.appendChild(dl);
 
-      var shown = r.n <= COOC_FULL ? r.n : Math.min(COOC_PREVIEW, r.n);
-      if(shown < r.n){
-        out.appendChild(el('p', 'vocab-sum', 'Náhled prvních ' + shown + ' řádků a sloupců; celou matici (' + r.n + ' × ' + r.n + ') je možné stáhnout.'));
-      }
+      // pořadí zobrazených tokenů (řádky i sloupce): ve slovníkovém pořadí, nebo podle největší hodnoty
+      var natural = [];
+      for(var q = 0; q < r.n; q++) natural.push(q);
+      var preview = r.n > COOC_FULL;
+      var rowMax = new Array(r.n).fill(0);
+      var rowSum = new Array(r.n).fill(0);
+      r.counts.forEach(function(val, key){
+        var wi = Math.floor(key / r.n);
+        if(val > rowMax[wi]) rowMax[wi] = val;
+        rowSum[wi] += val;
+      });
+      var byMax = natural.slice().sort(function(i, j){
+        return (rowMax[j] - rowMax[i]) || (rowSum[j] - rowSum[i]) || (i - j);
+      });
+
+      var caption = el('p', 'vocab-sum');
       var scroll = el('div', 'vocab-scroll');
-      var table = el('table', 'theory-table cooc');
-      var thead = el('thead');
-      var hr = el('tr');
-      hr.appendChild(el('th', '', 'w \\ c'));
-      for(var c = 0; c < shown; c++) hr.appendChild(el('th', '', tokens[c]));
-      thead.appendChild(hr);
-      table.appendChild(thead);
-      var tbody = el('tbody');
-      for(var w = 0; w < shown; w++){
-        var tr = el('tr');
-        tr.appendChild(el('th', '', tokens[w]));
-        for(var c2 = 0; c2 < shown; c2++){
-          var x = r.counts.get(w * r.n + c2) || 0;
-          tr.appendChild(el('td', x ? 'mono' : 'mono zero', String(x)));
-        }
-        tbody.appendChild(tr);
+      var modeBtns = [];
+      if(preview){
+        var modeRow = el('div', 'row');
+        modeRow.setAttribute('role', 'group');
+        modeRow.setAttribute('aria-label', 'Zobrazení náhledu matice');
+        [['first', 'Prvních ' + COOC_PREVIEW], ['max', 'Největší hodnoty']].forEach(function(m){
+          var cb = el('button', 'chip', m[1]);
+          cb.type = 'button';
+          cb.setAttribute('data-cooc-mode', m[0]);
+          cb.addEventListener('click', function(){ show(m[0]); });
+          modeBtns.push(cb);
+          modeRow.appendChild(cb);
+        });
+        modeRow.style.marginBottom = '10px';
+        out.appendChild(modeRow);
       }
-      table.appendChild(tbody);
-      scroll.appendChild(table);
+      out.appendChild(caption);
       out.appendChild(scroll);
+
+      function show(mode){
+        var order = natural;
+        if(preview){
+          order = (mode === 'max' ? byMax : natural).slice(0, COOC_PREVIEW);
+          modeBtns.forEach(function(cb){
+            var on = cb.getAttribute('data-cooc-mode') === mode;
+            cb.classList.toggle('on', on);
+            cb.setAttribute('aria-pressed', on ? 'true' : 'false');
+          });
+          caption.textContent = (mode === 'max'
+            ? 'Náhled ' + order.length + ' řádků a sloupců s největšími hodnotami (podle největšího prvku v řádku, pak podle součtu řádku)'
+            : 'Náhled prvních ' + order.length + ' řádků a sloupců')
+            + '; celou matici (' + r.n + ' × ' + r.n + ') je možné stáhnout.';
+        } else {
+          caption.hidden = true;
+        }
+        scroll.innerHTML = '';
+        var table = el('table', 'theory-table cooc');
+        var thead = el('thead');
+        var hr = el('tr');
+        hr.appendChild(el('th', '', 'w \\ c'));
+        order.forEach(function(c){ hr.appendChild(el('th', '', tokens[c])); });
+        thead.appendChild(hr);
+        table.appendChild(thead);
+        var tbody = el('tbody');
+        order.forEach(function(w){
+          var tr = el('tr');
+          tr.appendChild(el('th', '', tokens[w]));
+          order.forEach(function(c){
+            var x = r.counts.get(w * r.n + c) || 0;
+            tr.appendChild(el('td', x ? 'mono' : 'mono zero', String(x)));
+          });
+          tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        scroll.appendChild(table);
+      }
+      show('first');
     }
 
     // matice: první řádek jsou tokeny (sloupce c), první sloupec tokeny (řádky w)
