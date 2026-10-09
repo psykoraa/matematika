@@ -818,6 +818,7 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
 
     var COOC_FULL = 100;      // do tohoto počtu tokenů se zobrazí celá matice
     var COOC_PREVIEW = 30;    // větší matice: náhled prvních řádků a sloupců
+    var COOC_VIEW_MAX = 500;  // větší matici lze na stránce zobrazit jen jako náhled (celou stáhnout)
     var COOC_MAX = 2000;      // větší slovník: matice se nepočítá
 
     // vypíše matici pro text (bloky = neprázdné řádky) a poslední vytvořený slovník do prvku out
@@ -889,7 +890,7 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
         var modeRow = el('div', 'row');
         modeRow.setAttribute('role', 'group');
         modeRow.setAttribute('aria-label', 'Zobrazení náhledu matice');
-        [['first', 'Prvních ' + COOC_PREVIEW], ['max', 'Největší hodnoty']].forEach(function(m){
+        [['first', 'Prvních ' + COOC_PREVIEW], ['max', 'Největší hodnoty'], ['all', 'Celá matice']].forEach(function(m){
           var cb = el('button', 'chip', m[1]);
           cb.type = 'button';
           cb.setAttribute('data-' + modeAttr + '-mode', m[0]);
@@ -903,42 +904,48 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
       parent.appendChild(caption);
       parent.appendChild(scroll);
 
+      function esc(t){ return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
       function show(mode){
         var order = natural;
+        scroll.innerHTML = '';
         if(preview){
-          order = (mode === 'max' ? byMax : natural).slice(0, COOC_PREVIEW);
+          if(mode === 'all') order = natural;
+          else order = (mode === 'max' ? byMax : natural).slice(0, COOC_PREVIEW);
           modeBtns.forEach(function(cb){
             var on = cb.getAttribute('data-' + modeAttr + '-mode') === mode;
             cb.classList.toggle('on', on);
             cb.setAttribute('aria-pressed', on ? 'true' : 'false');
           });
-          caption.textContent = (mode === 'max'
-            ? 'Náhled ' + order.length + ' řádků a sloupců s největšími hodnotami (podle největšího prvku v řádku, pak podle součtu řádku)'
-            : 'Náhled prvních ' + order.length + ' řádků a sloupců')
-            + '; celou matici (' + n + ' × ' + n + ') je možné stáhnout.';
+          if(mode === 'all'){
+            caption.textContent = 'Celá matice (' + n + ' × ' + n + ').';
+            if(n > COOC_VIEW_MAX){
+              caption.textContent = 'Celá matice (' + n + ' × ' + n + ') je na zobrazení na stránce příliš velká; stáhněte ji jako .tsv.';
+              return;
+            }
+          } else {
+            caption.textContent = (mode === 'max'
+              ? 'Náhled ' + order.length + ' řádků a sloupců s největšími hodnotami (podle největšího prvku v řádku, pak podle součtu řádku)'
+              : 'Náhled prvních ' + order.length + ' řádků a sloupců')
+              + '; celou matici (' + n + ' × ' + n + ') je možné zobrazit tlačítkem „Celá matice“ nebo stáhnout.';
+          }
         } else {
           caption.hidden = true;
         }
-        scroll.innerHTML = '';
-        var table = el('table', 'theory-table cooc');
-        var thead = el('thead');
-        var hr = el('tr');
-        hr.appendChild(el('th', '', 'w \\ c'));
-        order.forEach(function(c){ hr.appendChild(el('th', '', tokens[c])); });
-        thead.appendChild(hr);
-        table.appendChild(thead);
-        var tbody = el('tbody');
+        // tabulka se skládá jako text (u celé matice jsou to stovky tisíc buněk)
+        var html = ['<table class="theory-table cooc"><thead><tr><th>w \\ c</th>'];
+        order.forEach(function(c){ html.push('<th>' + esc(tokens[c]) + '</th>'); });
+        html.push('</tr></thead><tbody>');
         order.forEach(function(w){
-          var tr = el('tr');
-          tr.appendChild(el('th', '', tokens[w]));
+          html.push('<tr><th>' + esc(tokens[w]) + '</th>');
           order.forEach(function(c){
             var x = vals.get(w * n + c) || 0;
-            tr.appendChild(el('td', x ? 'mono' : 'mono zero', fmt(x)));
+            html.push('<td class="' + (x ? 'mono' : 'mono zero') + '">' + fmt(x) + '</td>');
           });
-          tbody.appendChild(tr);
+          html.push('</tr>');
         });
-        table.appendChild(tbody);
-        scroll.appendChild(table);
+        html.push('</tbody></table>');
+        scroll.innerHTML = html.join('');
       }
       show('first');
     }
