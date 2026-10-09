@@ -199,7 +199,7 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
         </div>
         <button class="btn primary" id="btn-vocab" type="button">Vytvořit slovník</button>
       </div>
-      <div class="hint">Korpusem je text článku níže; slova jsou souvislé řady písmen a číslic. Začíná se slovníkem jednotlivých znaků. V každém kroku se nejčastější dvojice sousedních symbolů (počítá se přes všechny výskyty slov, i překrývající se dvojice) nahradí novým symbolem. Při stejné četnosti vyhrává dvojice, která se v textu vyskytla dřív. Velikost písmen se řídí přepínačem výše.</div>
+      <div class="hint">Korpusem je text článku níže; slova jsou souvislé řady písmen a číslic. Začíná se slovníkem všech písmen české abecedy (i těch, která v textu nejsou; „ch“ vznikne až sloučením) a dalších znaků z textu. V každém kroku se nejčastější dvojice sousedních symbolů (počítá se přes všechny výskyty slov, i překrývající se dvojice) nahradí novým symbolem. Při stejné četnosti vyhrává dvojice, která se v textu vyskytla dřív. Velikost písmen se řídí přepínačem výše.</div>
       <div id="vocab-out" class="vocab-out" aria-live="polite"></div>
     </div>
 
@@ -508,6 +508,9 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
 
     // ---------- slovník BPE ----------
     var SEP = '\u0001';
+    // písmena české abecedy po jednotlivých znacích („ch“ vznikne až sloučením); při rozlišování velikosti i velká
+    var CZ_LOWER = 'aábcčdďeéěfghiíjklmnňoópqrřsštťuúůvwxyýzž';
+    function czechLetters(cs){ return (CZ_LOWER + (cs ? CZ_LOWER.toUpperCase() : '')).split(''); }
     var vocabIn = document.getElementById('in-vocab' + sfx);
     var vocabOut = document.getElementById('vocab-out' + sfx);
 
@@ -568,7 +571,10 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
           }
         }
       });
-      var initial = Object.keys(chars).sort();
+      // počáteční slovník: všechna písmena české abecedy (i ta, která v textu nejsou),
+      // pak ostatní znaky z textu (číslice, jiná písmena, u SentencePiece „_“)
+      var czech = czechLetters(cs);
+      var initial = czech.concat(Object.keys(chars).filter(function(c){ return czech.indexOf(c) < 0; }).sort());
       if(!order.length){
         vocabOut.appendChild(el('p', 'vocab-note', 'V textu nejsou žádná slova.'));
         return;
@@ -653,7 +659,7 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
       });
       var note = el('p', 'vocab-note', 'Počítám…');
       vocabOut.appendChild(note);
-      window.llmTrain({text: lines.join('\n'), algo: typeName, size: target, ignoreCase: !cs}, function(res){
+      window.llmTrain({text: lines.join('\n'), algo: typeName, size: target, ignoreCase: !cs, alphabet: czechLetters(cs).join('')}, function(res){
         vocabOut.innerHTML = '';
         if(!res){
           vocabOut.appendChild(el('p', 'vocab-note', 'Spojení s programem se přerušilo. Spusťte program znovu.'));
@@ -1045,7 +1051,7 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
     placeholder: 'např. th',
     finderHint: 'Hledá se jen uvnitř jednoho slova (slovo = souvislá řada písmen a číslic; mezery a interpunkci nelze zadat). Překrývající se výskyty se počítají všechny. ' + SPLIT_HINT,
     vocabTitle: 'Slovník WordPiece',
-    vocabHint: 'Korpusem je text článku níže; slova jsou souvislé řady písmen a číslic. Začíná se slovníkem jednotlivých znaků. ' + RATIO_HINT
+    vocabHint: 'Korpusem je text článku níže; slova jsou souvislé řady písmen a číslic. Začíná se slovníkem všech písmen české abecedy (i těch, která v textu nejsou; „ch“ vznikne až sloučením) a dalších znaků z textu. ' + RATIO_HINT
   });
 
   makeVariant('-sp', 'sub-sentencepiece', {
@@ -1055,7 +1061,7 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
       'Interpunkce zůstává v textu jako běžné znaky. Hledá se v rámci jednoho odstavce, nadpisu nebo buňky tabulky. Překrývající se výskyty se počítají všechny. ' + SPLIT_HINT,
     vocabTitle: 'Slovník SentencePiece',
     vocabHint: 'Korpusem je text článku níže. Mezery se nahradí znakem „_“ a interpunkce zůstává, takže slova nejsou oddělená a tokeny mohou zasahovat přes více slov. ' +
-      'Každý odstavec, nadpis nebo buňka tabulky je jedna řada znaků. Začíná se slovníkem jednotlivých znaků (včetně „_“). ' + RATIO_HINT
+      'Každý odstavec, nadpis nebo buňka tabulky je jedna řada znaků. Začíná se slovníkem všech písmen české abecedy (i těch, která v textu nejsou; „ch“ vznikne až sloučením), „_“ a dalších znaků z textu. ' + RATIO_HINT
   });
 
   setupTokenizer('', 'bpe');
