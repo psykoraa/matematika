@@ -1022,24 +1022,25 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
       };
     }
 
-    // PPMI: pro každé (w, c) ln( M(w,c) · m / (Σ řádku w · Σ řádku c) ), záporné hodnoty (a nuly v M) jako 0;
+    // PPMI: pro každé (w, c) ln( M(w,c) · m / (Σ řádku w · Σ sloupce c) ), záporné hodnoty (a nuly v M) jako 0;
     // m je součet všech hodnot matice M
     function renderPpmi(out, tokens, r, delta, coocCtl){
       out.innerHTML = '';
       var n = r.n;
       var rowSum = new Array(n).fill(0);
       var m = 0;   // součet všech hodnot matice M
-      r.counts.forEach(function(val, key){ rowSum[Math.floor(key / n)] += val; m += val; });
+      var colSum = new Array(n).fill(0);
+      r.counts.forEach(function(val, key){ rowSum[Math.floor(key / n)] += val; colSum[key % n] += val; m += val; });
       var vals = new Map();
       r.counts.forEach(function(val, key){
         var w = Math.floor(key / n);
         var c = key % n;
-        var x = Math.log(val * m / (rowSum[w] * rowSum[c]));
+        var x = Math.log(val * m / (rowSum[w] * colSum[c]));
         if(x > 0) vals.set(key, x);
       });
       var box = el('div', 'cooc-box');
       box.appendChild(el('p', 'vocab-sum', 'Matice PPMI:'));
-      box.appendChild(el('p', 'hint', 'Na pozici (w, c) je ln( M(w, c) · m / (součet řádku w · součet řádku c) ), kde M je matice společného výskytu a m je součet všech jejích hodnot. Záporná hodnota (a hodnota pro M(w, c) = 0) se nahradí nulou.'));
+      box.appendChild(el('p', 'hint', 'Na pozici (w, c) je ln( M(w, c) · m / (součet řádku w · součet sloupce c) ), kde M je matice společného výskytu a m je součet všech jejích hodnot. Záporná hodnota (a hodnota pro M(w, c) = 0) se nahradí nulou.'));
       var sum = el('p', 'vocab-sum');
       sum.appendChild(document.createTextNode('m = součet všech hodnot matice = '));
       sum.appendChild(el('b', '', String(m)));
@@ -1090,7 +1091,7 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
         calc.innerHTML = '';
         var mwc = r.counts.get(w * n + c) || 0;
         var rw = rowSum[w];
-        var rc = rowSum[c];
+        var rc = colSum[c];
         var head = el('p', 'vocab-sum');
         head.appendChild(document.createTextNode('Pozice w = '));
         head.appendChild(el('span', 'tok', tokens[w]));
@@ -1099,8 +1100,8 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
         head.appendChild(document.createTextNode(':'));
         calc.appendChild(head);
         calc.appendChild(mathBlock(
-          'M(w,c)=' + mwc + ',\\quad r_w=\\sum_y M(w,y)=' + rw + ',\\quad r_c=\\sum_y M(c,y)=' + rc + ',\\quad m=\\sum_{x,y}M(x,y)=' + m,
-          'M(w, c) = ' + mwc + ', součet řádku w = ' + rw + ', součet řádku c = ' + rc + ', m = ' + m + '.'));
+          'M(w,c)=' + mwc + ',\\quad r_w=\\sum_y M(w,y)=' + rw + ',\\quad s_c=\\sum_y M(y,c)=' + rc + ',\\quad m=\\sum_{x,y}M(x,y)=' + m,
+          'M(w, c) = ' + mwc + ', součet řádku w = ' + rw + ', součet sloupce c = ' + rc + ', m = ' + m + '.'));
         if(!mwc){
           calc.appendChild(mathBlock(
             'M(w,c)=0\\ \\Rightarrow\\ \\mathrm{PPMI}(w,c)=0',
@@ -1112,7 +1113,7 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
           var lnTex = ln.toFixed(3).replace('.', '{,}');
           var res = fmtPpmi(Math.max(0, ln));
           calc.appendChild(mathBlock(
-            '\\begin{aligned}\\mathrm{PPMI}(w,c)&=\\max\\!\\left(0,\\ \\ln\\frac{M(w,c)\\cdot m}{r_w\\cdot r_c}\\right)\\\\'
+            '\\begin{aligned}\\mathrm{PPMI}(w,c)&=\\max\\!\\left(0,\\ \\ln\\frac{M(w,c)\\cdot m}{r_w\\cdot s_c}\\right)\\\\'
             + '&=\\max\\!\\left(0,\\ \\ln\\frac{' + mwc + '\\cdot ' + m + '}{' + rw + '\\cdot ' + rc + '}\\right)'
             + '=\\max\\!\\left(0,\\ \\ln\\frac{' + (mwc * m) + '}{' + (rw * rc) + '}\\right)\\\\'
             + '&=\\max\\!\\left(0,\\ \\ln ' + texNum(q) + '\\right)=\\max\\!\\left(0,\\ ' + lnTex + '\\right)=' + res.replace(',', '{,}') + '\\end{aligned}',
