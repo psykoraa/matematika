@@ -233,6 +233,24 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
 Odpoledne jsme došli na kopec, odkud byl vidět celý kraj. Pod námi se rozkládala pole, louky a malé domky s červenými střechami. Bylo to krásné místo, a proto jsme tam zůstali téměř hodinu. Domů jsme se vrátili unavení, ale šťastní.</textarea>
       </div>
     </div>
+
+    <div class="panel" id="cooc-panel">
+      <div class="panel-title">Matice společného výskytu</div>
+      <div class="row" role="group" aria-label="Algoritmus tokenizace">
+        <button class="chip on" id="cooc-algo-bpe" data-algo="0" aria-pressed="true">BPE</button>
+        <button class="chip" id="cooc-algo-wp" data-algo="1" aria-pressed="false">WordPiece</button>
+        <button class="chip" id="cooc-algo-sp" data-algo="2" aria-pressed="false">SentencePiece</button>
+      </div>
+      <div class="vocab-controls" style="margin-top:14px">
+        <div class="field">
+          <label for="in-delta">Vzdálenost Δ (počet tokenů nalevo i napravo)</label>
+          <div class="input-wrap"><input id="in-delta" type="text" inputmode="numeric" autocomplete="off" maxlength="3" placeholder="např. 2"></div>
+        </div>
+        <button class="btn primary" id="btn-cooc" type="button">Spočítat matici</button>
+      </div>
+      <div class="hint">Trénovací text se rozloží na tokeny podle slovníku vybraného algoritmu, který je vytvořený na kartě Tokenizace (sloučení se použijí v pořadí vzniku). Pro každý výskyt tokenu w se započítají tokeny c do vzdálenosti Δ nalevo i napravo; okno nepřekračuje hranici odstavce (řádku). Na pozici (w, c) je počet těchto tokenů c.</div>
+      <div id="cooc-out" class="vocab-out" aria-live="polite"></div>
+    </div>
   </div>
 
   <footer>Matematický seminář — velké jazykové modely</footer>
@@ -649,6 +667,8 @@ Odpoledne jsme došli na kopec, odkud byl vidět celý kraj. Pod námi se rozkl�
     }
 
     // výpis hotového slovníku
+    var lastVocab = null;   // poslední vytvořený slovník: {merges, tokens, cs}
+
     function showVocab(target, cs, initial, wordCount, merges, tokens, exhausted){
       var sum = el('p', 'vocab-sum');
       sum.appendChild(document.createTextNode('Slovník má '));
@@ -672,7 +692,7 @@ Odpoledne jsme došli na kopec, odkud byl vidět celý kraj. Pod námi se rozkl�
       dlMerges.addEventListener('click', function(){ downloadMerges(merges); });
       openRow.appendChild(dlMerges);
       vocabOut.appendChild(openRow);
-      addCooc(merges, tokens, cs);
+      lastVocab = {merges: merges, tokens: tokens, cs: cs};   // pro matici společného výskytu (karta Trénink)
       if(exhausted){
         vocabOut.appendChild(el('p', 'vocab-note', 'Slovník nelze zvětšit na ' + target + ': všechna slova už jsou jediným symbolem.'));
       }
@@ -714,26 +734,22 @@ Odpoledne jsme došli na kopec, odkud byl vidět celý kraj. Pod námi se rozkl�
       }
     }
     // ---------- matice společného výskytu ----------
-    // jednotky korpusu po blocích (odstavec, nadpis...) v pořadí v textu: slova,
-    // u SentencePiece celý blok jako jedna řada znaků (stejně jako při tvorbě slovníku)
-    function corpusUnits(cs){
-      return textGroups().map(function(nodes){
-        var text = '';
-        nodes.forEach(function(n){ text += n.nodeValue; });
-        if(!cs) text = lower(text);
-        if(stream){
-          text = toStream(text);
-          return text ? [text] : [];
-        }
-        var units = [];
-        var word = '';
-        for(var i = 0; i <= text.length; i++){
-          var c = i < text.length ? text.charAt(i) : '';
-          if(c && isWordChar(c)){ word += c; continue; }
-          if(word){ units.push(word); word = ''; }
-        }
-        return units;
-      });
+    // jednotky jednoho bloku (odstavce): slova, u SentencePiece celý blok jako jedna řada znaků
+    // (stejně jako při tvorbě slovníku)
+    function unitsOfText(text, cs){
+      if(!cs) text = lower(text);
+      if(stream){
+        text = toStream(text);
+        return text ? [text] : [];
+      }
+      var units = [];
+      var word = '';
+      for(var i = 0; i <= text.length; i++){
+        var c = i < text.length ? text.charAt(i) : '';
+        if(c && isWordChar(c)){ word += c; continue; }
+        if(word){ units.push(word); word = ''; }
+      }
+      return units;
     }
 
     // rozklad jednotky na tokeny: sloučení se použijí v pořadí vzniku, jako při tvorbě slovníku
@@ -752,8 +768,10 @@ Odpoledne jsme došli na kopec, odkud byl vidět celý kraj. Pod námi se rozkl�
     }
 
     // counts: Map (w·n + c) → kolikrát se token c vyskytl do vzdálenosti delta od některého výskytu w;
-    // okno nepřekračuje hranici bloku a výskyt se s vlastní pozicí nepočítá
-    function coocCount(merges, tokens, cs, delta){
+    // okno nepřekračuje hranici bloku a výskyt se s vlastní pozicí nepočítá;
+    // token, který není ve slovníku, zabírá pozici, ale do matice se nezapočítá
+    function coocCount(vocab, blocks, delta){
+      var tokens = vocab.tokens;
       var index = Object.create(null);
       tokens.forEach(function(t, i){ index[t] = i; });
       var n = tokens.length;
@@ -761,12 +779,16 @@ Odpoledne jsme došli na kopec, odkud byl vidět celý kraj. Pod námi se rozkl�
       var counts = new Map();
       var occ = new Array(n).fill(0);
       var total = 0;
-      corpusUnits(cs).forEach(function(units){
+      var unknown = 0;
+      blocks.forEach(function(block){
         var seq = [];
-        units.forEach(function(u){
+        unitsOfText(block, vocab.cs).forEach(function(u){
           var toks = cache[u];
-          if(!toks){ toks = tokenizeUnit(u, merges); cache[u] = toks; }
-          toks.forEach(function(t){ seq.push(index[t] === undefined ? -1 : index[t]); });
+          if(!toks){ toks = tokenizeUnit(u, vocab.merges); cache[u] = toks; }
+          toks.forEach(function(t){
+            if(index[t] === undefined){ seq.push(-1); unknown++; }
+            else seq.push(index[t]);
+          });
         });
         total += seq.length;
         for(var i = 0; i < seq.length; i++){
@@ -782,103 +804,70 @@ Odpoledne jsme došli na kopec, odkud byl vidět celý kraj. Pod námi se rozkl�
           }
         }
       });
-      return {n: n, counts: counts, occ: occ, total: total};
+      return {n: n, counts: counts, occ: occ, total: total, unknown: unknown};
     }
 
     var COOC_FULL = 100;      // do tohoto počtu tokenů se zobrazí celá matice
     var COOC_PREVIEW = 30;    // větší matice: náhled prvních řádků a sloupců
     var COOC_MAX = 2000;      // větší slovník: matice se nepočítá
 
-    function addCooc(merges, tokens, cs){
-      var box = el('div', 'cooc-box');
-      box.appendChild(el('p', 'vocab-sum', 'Matice společného výskytu:'));
-      var controls = el('div', 'vocab-controls');
-      var field = el('div', 'field');
-      var label = el('label', '', 'Vzdálenost Δ (počet tokenů nalevo i napravo)');
-      label.setAttribute('for', 'in-delta' + sfx);
-      var wrap = el('div', 'input-wrap');
-      var input = el('input');
-      input.id = 'in-delta' + sfx;
-      input.type = 'text';
-      input.setAttribute('inputmode', 'numeric');
-      input.setAttribute('autocomplete', 'off');
-      input.maxLength = 3;
-      input.placeholder = 'např. 2';
-      wrap.appendChild(input);
-      field.appendChild(label);
-      field.appendChild(wrap);
-      var btn = el('button', 'btn primary', 'Spočítat matici');
-      btn.type = 'button';
-      btn.id = 'btn-cooc' + sfx;
-      controls.appendChild(field);
-      controls.appendChild(btn);
-      box.appendChild(controls);
-      box.appendChild(el('p', 'hint', 'Text se rozloží na tokeny podle slovníku (sloučení se použijí v pořadí vzniku). Pro každý výskyt tokenu w se započítají tokeny c do vzdálenosti Δ nalevo i napravo; okno nepřekračuje hranici odstavce. Na pozici (w, c) je počet těchto tokenů c.'));
-      var out = el('div', 'cooc-out');
-      out.setAttribute('aria-live', 'polite');
-      box.appendChild(out);
-      vocabOut.appendChild(box);
-
-      function run(){
-        var v = input.value.replace(/[^0-9]/g, '');
-        input.value = v;
-        out.innerHTML = '';
-        var delta = parseInt(v, 10);
-        if(!v || !(delta >= 1)){
-          out.appendChild(el('p', 'vocab-note', 'Zadejte vzdálenost Δ jako celé číslo alespoň 1.'));
-          return;
-        }
-        if(tokens.length > COOC_MAX){
-          out.appendChild(el('p', 'vocab-note', 'Slovník má víc než ' + COOC_MAX + ' tokenů, matice by byla příliš velká.'));
-          return;
-        }
-        var r = coocCount(merges, tokens, cs, delta);
-        var present = r.occ.filter(function(x){ return x > 0; }).length;
-        var sum = el('p', 'vocab-sum');
-        sum.appendChild(document.createTextNode('Text má '));
-        sum.appendChild(el('b', '', String(r.total)));
-        sum.appendChild(document.createTextNode(' tokenů, ve slovníku s ' + r.n + ' tokeny se jich vyskytuje ' + present + '. Δ = '));
-        sum.appendChild(el('b', '', String(delta)));
-        sum.appendChild(document.createTextNode('.'));
-        out.appendChild(sum);
-
-        var dl = el('div', 'vocab-open');
-        var dlBtn = el('button', 'btn', 'Stáhnout matici (.tsv)');
-        dlBtn.type = 'button';
-        dlBtn.addEventListener('click', function(){ downloadCooc(tokens, r, delta); });
-        dl.appendChild(dlBtn);
-        out.appendChild(dl);
-
-        var shown = r.n <= COOC_FULL ? r.n : Math.min(COOC_PREVIEW, r.n);
-        if(shown < r.n){
-          out.appendChild(el('p', 'vocab-sum', 'Náhled prvních ' + shown + ' řádků a sloupců; celou matici (' + r.n + ' × ' + r.n + ') je možné stáhnout.'));
-        }
-        var scroll = el('div', 'vocab-scroll');
-        var table = el('table', 'theory-table cooc');
-        var thead = el('thead');
-        var hr = el('tr');
-        hr.appendChild(el('th', '', 'w \\ c'));
-        for(var c = 0; c < shown; c++) hr.appendChild(el('th', '', tokens[c]));
-        thead.appendChild(hr);
-        table.appendChild(thead);
-        var tbody = el('tbody');
-        for(var w = 0; w < shown; w++){
-          var tr = el('tr');
-          tr.appendChild(el('th', '', tokens[w]));
-          for(var c2 = 0; c2 < shown; c2++){
-            var x = r.counts.get(w * r.n + c2) || 0;
-            tr.appendChild(el('td', x ? 'mono' : 'mono zero', String(x)));
-          }
-          tbody.appendChild(tr);
-        }
-        table.appendChild(tbody);
-        scroll.appendChild(table);
-        out.appendChild(scroll);
+    // vypíše matici pro text (bloky = neprázdné řádky) a poslední vytvořený slovník do prvku out
+    function renderCooc(out, blocks, delta){
+      out.innerHTML = '';
+      if(!lastVocab){
+        out.appendChild(el('p', 'vocab-note', 'Pro tento algoritmus ještě není vytvořený slovník. Vytvořte ho na kartě Tokenizace.'));
+        return;
       }
-      btn.addEventListener('click', run);
-      input.addEventListener('keydown', function(e){
-        if(e.key === 'Enter'){ e.preventDefault(); run(); }
-      });
+      var tokens = lastVocab.tokens;
+      if(tokens.length > COOC_MAX){
+        out.appendChild(el('p', 'vocab-note', 'Slovník má víc než ' + COOC_MAX + ' tokenů, matice by byla příliš velká.'));
+        return;
+      }
+      var r = coocCount(lastVocab, blocks, delta);
+      var present = r.occ.filter(function(x){ return x > 0; }).length;
+      var sum = el('p', 'vocab-sum');
+      sum.appendChild(document.createTextNode('Text má '));
+      sum.appendChild(el('b', '', String(r.total)));
+      sum.appendChild(document.createTextNode(' tokenů, ve slovníku s ' + r.n + ' tokeny se jich vyskytuje ' + present + '. Δ = '));
+      sum.appendChild(el('b', '', String(delta)));
+      sum.appendChild(document.createTextNode('.'));
+      out.appendChild(sum);
+      if(r.unknown){
+        out.appendChild(el('p', 'vocab-note', r.unknown + ' tokenů z textu není ve slovníku (slovník byl vytvořen z jiného textu); do matice se nezapočítají.'));
+      }
+
+      var dl = el('div', 'vocab-open');
+      var dlBtn = el('button', 'btn', 'Stáhnout matici (.tsv)');
+      dlBtn.type = 'button';
+      dlBtn.addEventListener('click', function(){ downloadCooc(tokens, r, delta); });
+      dl.appendChild(dlBtn);
+      out.appendChild(dl);
+
+      var shown = r.n <= COOC_FULL ? r.n : Math.min(COOC_PREVIEW, r.n);
+      if(shown < r.n){
+        out.appendChild(el('p', 'vocab-sum', 'Náhled prvních ' + shown + ' řádků a sloupců; celou matici (' + r.n + ' × ' + r.n + ') je možné stáhnout.'));
+      }
+      var scroll = el('div', 'vocab-scroll');
+      var table = el('table', 'theory-table cooc');
+      var thead = el('thead');
+      var hr = el('tr');
+      hr.appendChild(el('th', '', 'w \\ c'));
+      for(var c = 0; c < shown; c++) hr.appendChild(el('th', '', tokens[c]));
+      thead.appendChild(hr);
+      table.appendChild(thead);
+      var tbody = el('tbody');
+      for(var w = 0; w < shown; w++){
+        var tr = el('tr');
+        tr.appendChild(el('th', '', tokens[w]));
+        for(var c2 = 0; c2 < shown; c2++){
+          var x = r.counts.get(w * r.n + c2) || 0;
+          tr.appendChild(el('td', x ? 'mono' : 'mono zero', String(x)));
+        }
+        tbody.appendChild(tr);
+      }
+      table.appendChild(tbody);
+      scroll.appendChild(table);
+      out.appendChild(scroll);
     }
 
     // matice: první řádek jsou tokeny (sloupce c), první sloupec tokeny (řádky w)
@@ -950,6 +939,8 @@ Odpoledne jsme došli na kopec, odkud byl vidět celý kraj. Pod námi se rozkl�
       highlight();
     }
     instances.push({
+      typeName: typeName,
+      renderCooc: renderCooc,
       setText: function(text){
         article.innerHTML = '';
         var panel = el('div', 'panel');
@@ -1018,6 +1009,46 @@ Odpoledne jsme došli na kopec, odkud byl vidět celý kraj. Pod námi se rozkl�
   setupTokenizer('', 'bpe');
   setupTokenizer('-wp', 'wp');
   setupTokenizer('-sp', 'sp');
+
+  // ---------- karta Trénink: matice společného výskytu ----------
+  (function(){
+    var algo = 0;
+    var algoBtns = Array.prototype.slice.call(document.querySelectorAll('[data-algo]'));
+    algoBtns.forEach(function(b){
+      b.addEventListener('click', function(){
+        algo = parseInt(b.getAttribute('data-algo'), 10);
+        algoBtns.forEach(function(x){
+          x.classList.toggle('on', x === b);
+          x.setAttribute('aria-pressed', x === b ? 'true' : 'false');
+        });
+        document.getElementById('cooc-out').innerHTML = '';
+      });
+    });
+    var deltaIn = document.getElementById('in-delta');
+    var out = document.getElementById('cooc-out');
+    function run(){
+      var v = deltaIn.value.replace(/[^0-9]/g, '');
+      deltaIn.value = v;
+      var delta = parseInt(v, 10);
+      if(!v || !(delta >= 1)){
+        out.innerHTML = '';
+        var note = document.createElement('p');
+        note.className = 'vocab-note';
+        note.textContent = 'Zadejte vzdálenost Δ jako celé číslo alespoň 1.';
+        out.appendChild(note);
+        return;
+      }
+      // bloky = neprázdné řádky trénovacího textu
+      var blocks = document.getElementById('in-trenink').value.split(/\r?\n/).map(function(l){
+        return l.replace(/\s+/g, ' ').trim();
+      }).filter(function(l){ return l; });
+      instances[algo].renderCooc(out, blocks, delta);
+    }
+    document.getElementById('btn-cooc').addEventListener('click', run);
+    deltaIn.addEventListener('keydown', function(e){
+      if(e.key === 'Enter'){ e.preventDefault(); run(); }
+    });
+  })();
 
   // Veřejné rozhraní pro program v počítači: nahradit článek vlastním textem a vrátit ho zpět
   window.llmCorpus = {
