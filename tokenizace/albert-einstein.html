@@ -241,15 +241,33 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
   <div id="view-termdok" class="tab-section" hidden>
     <div class="panel">
       <div class="panel-title">Texty</div>
-      <div class="row" role="group" aria-label="Vzorové texty">
-        <button class="chip on" id="td-sample-0" data-td-sample="0" aria-pressed="true">Text 1 – souvisí s tokenizací</button>
-        <button class="chip" id="td-sample-1" data-td-sample="1" aria-pressed="false">Text 2 – částečně souvisí</button>
-        <button class="chip" id="td-sample-2" data-td-sample="2" aria-pressed="false">Text 3 – nesouvisí</button>
+      <div class="hint">Každý z textů je jeden dokument; texty lze libovolně upravit.</div>
+      <div class="field" style="margin-top:14px">
+        <label for="in-td-0">Text 1 – souvisí s tokenizací</label>
+        <textarea id="in-td-0" class="big-text" rows="8" spellcheck="false" autocomplete="off"></textarea>
       </div>
       <div class="field" style="margin-top:14px">
-        <label for="in-termdok">Vyberte vzorový text nebo vložte libovolně dlouhý vlastní text</label>
-        <textarea id="in-termdok" class="big-text" rows="12" spellcheck="false" autocomplete="off" placeholder="Sem vložte text…"></textarea>
+        <label for="in-td-1">Text 2 – částečně souvisí</label>
+        <textarea id="in-td-1" class="big-text" rows="8" spellcheck="false" autocomplete="off"></textarea>
       </div>
+      <div class="field" style="margin-top:14px">
+        <label for="in-td-2">Text 3 – nesouvisí</label>
+        <textarea id="in-td-2" class="big-text" rows="8" spellcheck="false" autocomplete="off"></textarea>
+      </div>
+    </div>
+
+    <div class="panel" id="td-panel">
+      <div class="panel-title">Matice term-dokument</div>
+      <div class="row" role="group" aria-label="Algoritmus tokenizace">
+        <button class="chip on" id="td-algo-bpe" data-td-algo="0" aria-pressed="true">BPE</button>
+        <button class="chip" id="td-algo-wp" data-td-algo="1" aria-pressed="false">WordPiece</button>
+        <button class="chip" id="td-algo-sp" data-td-algo="2" aria-pressed="false">SentencePiece</button>
+      </div>
+      <div class="vocab-controls" style="margin-top:14px">
+        <button class="btn primary" id="btn-termdok" type="button">Vytvořit matici term-dokument</button>
+      </div>
+      <div class="hint">Texty se rozloží na tokeny podle slovníku vybraného algoritmu, který je vytvořený na kartě Tokenizace. Matice má tři sloupce: levý je Text 1, prostřední Text 2 a pravý Text 3. Číslo řádku je číslo tokenu ve slovníku; na řádku je počet výskytů tohoto tokenu v příslušném textu.</div>
+      <div id="td-out" class="vocab-out" aria-live="polite"></div>
     </div>
   </div>
 
@@ -846,6 +864,61 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
       return {n: n, counts: counts, occ: occ, total: total, unknown: unknown};
     }
 
+    // matice term-dokument: řádek = token slovníku, sloupec = dokument, hodnota = počet výskytů tokenu v dokumentu
+    function renderTermDoc(out, docs){
+      out.innerHTML = '';
+      if(!lastVocab){
+        out.appendChild(el('p', 'vocab-note', 'Pro tento algoritmus ještě není vytvořený slovník. Vytvořte ho na kartě Tokenizace.'));
+        return;
+      }
+      var tokens = lastVocab.tokens;
+      var n = tokens.length;
+      var index = Object.create(null);
+      tokens.forEach(function(t, i){ index[t] = i; });
+      var cache = Object.create(null);
+      var cnt = docs.map(function(){ return new Array(n).fill(0); });
+      var unknown = 0;
+      docs.forEach(function(doc, d){
+        doc.split(/\r?\n/).map(function(l){ return l.replace(/\s+/g, ' ').trim(); }).filter(function(l){ return l; }).forEach(function(block){
+          unitsOfText(block, lastVocab.cs).forEach(function(u){
+            var toks = cache[u];
+            if(!toks){ toks = tokenizeUnit(u, lastVocab.merges); cache[u] = toks; }
+            toks.forEach(function(t){
+              if(index[t] === undefined) unknown++;
+              else cnt[d][index[t]]++;
+            });
+          });
+        });
+      });
+      var sum = el('p', 'vocab-sum');
+      sum.appendChild(document.createTextNode('Slovník má '));
+      sum.appendChild(el('b', '', String(n)));
+      sum.appendChild(document.createTextNode(' tokenů, matice má ' + n + ' řádků a 3 sloupce.'));
+      out.appendChild(sum);
+      if(unknown){
+        out.appendChild(el('p', 'vocab-note', unknown + ' tokenů z textů není ve slovníku (slovník byl vytvořen z jiného textu); do matice se nezapočítají.'));
+      }
+      var dl = el('div', 'vocab-open');
+      var dlBtn = el('button', 'btn', 'Stáhnout matici (.tsv)');
+      dlBtn.type = 'button';
+      dlBtn.addEventListener('click', function(){
+        var lines = ['číslo\ttoken\tText 1\tText 2\tText 3'];
+        for(var i = 0; i < n; i++) lines.push((i + 1) + '\t' + tokens[i] + '\t' + cnt[0][i] + '\t' + cnt[1][i] + '\t' + cnt[2][i]);
+        downloadText('term-dokument-' + typeName + '.tsv', lines.join('\n') + '\n');
+      });
+      dl.appendChild(dlBtn);
+      out.appendChild(dl);
+
+      var wrap = el('div', 'vocab-scroll');
+      var html = ['<table class="theory-table cooc"><thead><tr><th>č.</th><th>token</th><th>Text 1</th><th>Text 2</th><th>Text 3</th></tr></thead><tbody>'];
+      for(var k = 0; k < n; k++){
+        html.push('<tr><th>' + (k + 1) + '</th><th>' + String(tokens[k]).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</th><td>' + cnt[0][k] + '</td><td>' + cnt[1][k] + '</td><td>' + cnt[2][k] + '</td></tr>');
+      }
+      html.push('</tbody></table>');
+      wrap.innerHTML = html.join('');
+      out.appendChild(wrap);
+    }
+
     var COOC_FULL = 100;      // do tohoto počtu tokenů se zobrazí celá matice
     var COOC_PREVIEW = 30;    // větší matice: náhled prvních řádků a sloupců
     var COOC_VIEW_MAX = 500;  // větší matici lze na stránce zobrazit jen jako náhled (celou stáhnout)
@@ -1354,6 +1427,7 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
     instances.push({
       typeName: typeName,
       renderCooc: renderCooc,
+      renderTermDoc: renderTermDoc,
       setText: function(text){
         article.innerHTML = '';
         var panel = el('div', 'panel');
@@ -1452,22 +1526,29 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
     pick(0);
   })();
 
-  // ---------- karta Matice term-dokument: vzorové texty ----------
+  // ---------- karta Matice term-dokument ----------
   (function(){
-    var area = document.getElementById('in-termdok');
-    var btns = Array.prototype.slice.call(document.querySelectorAll('[data-td-sample]'));
-    function pick(k){
-      area.value = trainSamples[k];
-      btns.forEach(function(b){
-        var on = parseInt(b.getAttribute('data-td-sample'), 10) === k;
-        b.classList.toggle('on', on);
-        b.setAttribute('aria-pressed', on ? 'true' : 'false');
-      });
-    }
-    btns.forEach(function(b){
-      b.addEventListener('click', function(){ pick(parseInt(b.getAttribute('data-td-sample'), 10)); });
+    var areas = [0, 1, 2].map(function(k){
+      var a = document.getElementById('in-td-' + k);
+      a.value = trainSamples[k];
+      return a;
     });
-    pick(0);
+    var out = document.getElementById('td-out');
+    var algo = 0;
+    var algoBtns = Array.prototype.slice.call(document.querySelectorAll('[data-td-algo]'));
+    algoBtns.forEach(function(b){
+      b.addEventListener('click', function(){
+        algo = parseInt(b.getAttribute('data-td-algo'), 10);
+        algoBtns.forEach(function(x){
+          x.classList.toggle('on', x === b);
+          x.setAttribute('aria-pressed', x === b ? 'true' : 'false');
+        });
+        out.innerHTML = '';
+      });
+    });
+    document.getElementById('btn-termdok').addEventListener('click', function(){
+      instances[algo].renderTermDoc(out, areas.map(function(a){ return a.value; }));
+    });
   })();
 
   // ---------- karta PPMI: matice společného výskytu ----------
