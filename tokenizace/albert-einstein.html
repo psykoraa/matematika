@@ -850,16 +850,31 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
       dlBtn.type = 'button';
       dlBtn.addEventListener('click', function(){ downloadCooc(tokens, r, delta); });
       dl.appendChild(dlBtn);
+      var ppmiBtn = el('button', 'btn primary', 'Vytvořit matici PPMI');
+      ppmiBtn.type = 'button';
+      ppmiBtn.id = 'btn-ppmi' + sfx;
+      dl.appendChild(ppmiBtn);
       out.appendChild(dl);
 
+      var view = el('div', 'matrix-view');
+      out.appendChild(view);
+      matrixView(view, tokens, r.n, r.counts, String, 'cooc');
+      var ppmiOut = el('div', 'ppmi-out');
+      out.appendChild(ppmiOut);
+      ppmiBtn.addEventListener('click', function(){ renderPpmi(ppmiOut, tokens, r, delta); });
+    }
+
+    // zobrazení matice: celá, nebo (u velkého slovníku) náhled s přepínáním mezi prvními řádky
+    // a řádky s největšími hodnotami; vals je řídká matice Map (w·n + c) → hodnota, chybějící = 0
+    function matrixView(parent, tokens, n, vals, fmt, modeAttr){
       // pořadí zobrazených tokenů (řádky i sloupce): ve slovníkovém pořadí, nebo podle největší hodnoty
       var natural = [];
-      for(var q = 0; q < r.n; q++) natural.push(q);
-      var preview = r.n > COOC_FULL;
-      var rowMax = new Array(r.n).fill(0);
-      var rowSum = new Array(r.n).fill(0);
-      r.counts.forEach(function(val, key){
-        var wi = Math.floor(key / r.n);
+      for(var q = 0; q < n; q++) natural.push(q);
+      var preview = n > COOC_FULL;
+      var rowMax = new Array(n).fill(0);
+      var rowSum = new Array(n).fill(0);
+      vals.forEach(function(val, key){
+        var wi = Math.floor(key / n);
         if(val > rowMax[wi]) rowMax[wi] = val;
         rowSum[wi] += val;
       });
@@ -877,30 +892,30 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
         [['first', 'Prvních ' + COOC_PREVIEW], ['max', 'Největší hodnoty']].forEach(function(m){
           var cb = el('button', 'chip', m[1]);
           cb.type = 'button';
-          cb.setAttribute('data-cooc-mode', m[0]);
+          cb.setAttribute('data-' + modeAttr + '-mode', m[0]);
           cb.addEventListener('click', function(){ show(m[0]); });
           modeBtns.push(cb);
           modeRow.appendChild(cb);
         });
         modeRow.style.marginBottom = '10px';
-        out.appendChild(modeRow);
+        parent.appendChild(modeRow);
       }
-      out.appendChild(caption);
-      out.appendChild(scroll);
+      parent.appendChild(caption);
+      parent.appendChild(scroll);
 
       function show(mode){
         var order = natural;
         if(preview){
           order = (mode === 'max' ? byMax : natural).slice(0, COOC_PREVIEW);
           modeBtns.forEach(function(cb){
-            var on = cb.getAttribute('data-cooc-mode') === mode;
+            var on = cb.getAttribute('data-' + modeAttr + '-mode') === mode;
             cb.classList.toggle('on', on);
             cb.setAttribute('aria-pressed', on ? 'true' : 'false');
           });
           caption.textContent = (mode === 'max'
             ? 'Náhled ' + order.length + ' řádků a sloupců s největšími hodnotami (podle největšího prvku v řádku, pak podle součtu řádku)'
             : 'Náhled prvních ' + order.length + ' řádků a sloupců')
-            + '; celou matici (' + r.n + ' × ' + r.n + ') je možné stáhnout.';
+            + '; celou matici (' + n + ' × ' + n + ') je možné stáhnout.';
         } else {
           caption.hidden = true;
         }
@@ -917,8 +932,8 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
           var tr = el('tr');
           tr.appendChild(el('th', '', tokens[w]));
           order.forEach(function(c){
-            var x = r.counts.get(w * r.n + c) || 0;
-            tr.appendChild(el('td', x ? 'mono' : 'mono zero', String(x)));
+            var x = vals.get(w * n + c) || 0;
+            tr.appendChild(el('td', x ? 'mono' : 'mono zero', fmt(x)));
           });
           tbody.appendChild(tr);
         });
@@ -928,15 +943,62 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
       show('first');
     }
 
-    // matice: první řádek jsou tokeny (sloupce c), první sloupec tokeny (řádky w)
-    function downloadCooc(tokens, r, delta){
+    // PPMI: pro každé (w, c) ln( M(w,c) · m / (Σ řádku w · Σ řádku c) ), záporné hodnoty (a nuly v M) jako 0;
+    // m je počet všech pozic matice (n · n)
+    function renderPpmi(out, tokens, r, delta){
+      out.innerHTML = '';
+      var n = r.n;
+      var m = n * n;
+      var rowSum = new Array(n).fill(0);
+      r.counts.forEach(function(val, key){ rowSum[Math.floor(key / n)] += val; });
+      var vals = new Map();
+      r.counts.forEach(function(val, key){
+        var w = Math.floor(key / n);
+        var c = key % n;
+        var x = Math.log(val * m / (rowSum[w] * rowSum[c]));
+        if(x > 0) vals.set(key, x);
+      });
+      var box = el('div', 'cooc-box');
+      box.appendChild(el('p', 'vocab-sum', 'Matice PPMI:'));
+      box.appendChild(el('p', 'hint', 'Na pozici (w, c) je ln( M(w, c) · m / (součet řádku w · součet řádku c) ), kde M je matice společného výskytu a m je počet všech pozic matice. Záporná hodnota (a hodnota pro M(w, c) = 0) se nahradí nulou.'));
+      var sum = el('p', 'vocab-sum');
+      sum.appendChild(document.createTextNode('m = ' + n + ' · ' + n + ' = '));
+      sum.appendChild(el('b', '', String(m)));
+      sum.appendChild(document.createTextNode('; kladných hodnot v matici PPMI je ' + vals.size + '.'));
+      box.appendChild(sum);
+      var dl = el('div', 'vocab-open');
+      var dlBtn = el('button', 'btn', 'Stáhnout matici PPMI (.tsv)');
+      dlBtn.type = 'button';
+      dlBtn.addEventListener('click', function(){
+        downloadMatrix('ppmi-' + typeName + '-delta' + delta + '.tsv', tokens, n, vals, fmtTsv);
+      });
+      dl.appendChild(dlBtn);
+      box.appendChild(dl);
+      var view = el('div', 'matrix-view');
+      box.appendChild(view);
+      matrixView(view, tokens, n, vals, fmtPpmi, 'ppmi');
+      out.appendChild(box);
+    }
+
+    // hodnota PPMI na obrazovce: tři desetinná místa s čárkou, 0 beze změny
+    function fmtPpmi(x){ return x ? x.toFixed(3).replace('.', ',') : '0'; }
+    // hodnota v souboru .tsv: číslo s desetinnou čárkou, aby ho tabulkový procesor přečetl
+    function fmtTsv(x){ return x ? String(Number(x.toPrecision(6))).replace('.', ',').replace('e', 'E') : '0'; }
+
+    // soubor .tsv: první řádek jsou tokeny (sloupce c), první sloupec tokeny (řádky w)
+    function downloadMatrix(name, tokens, n, vals, fmt){
       var lines = ['\t' + tokens.join('\t')];
-      for(var w = 0; w < r.n; w++){
+      for(var w = 0; w < n; w++){
         var row = [tokens[w]];
-        for(var c = 0; c < r.n; c++) row.push(r.counts.get(w * r.n + c) || 0);
+        for(var c = 0; c < n; c++) row.push(fmt(vals.get(w * n + c) || 0));
         lines.push(row.join('\t'));
       }
-      downloadText('matice-' + typeName + '-delta' + delta + '.tsv', lines.join('\n') + '\n');
+      downloadText(name, lines.join('\n') + '\n');
+    }
+
+    // matice: první řádek jsou tokeny (sloupce c), první sloupec tokeny (řádky w)
+    function downloadCooc(tokens, r, delta){
+      downloadMatrix('matice-' + typeName + '-delta' + delta + '.tsv', tokens, r.n, r.counts, String);
     }
 
     // export: soubory .tsv (oddělené tabulátory, UTF-8 se značkou pro Excel)
