@@ -133,6 +133,14 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
 .cooc-box{ margin-top:18px; padding-top:14px; border-top:1px solid var(--line); }
 .cooc-box .hint{ font-size:0.78rem; font-style:italic; color:var(--ink-soft); margin:0 0 10px; }
 
+.vocab-scroll .theory-table.cooc tr td.hl-line{ background:rgba(201,88,31,0.18); }
+.vocab-scroll .theory-table.cooc tr th.hl-line{ background:rgba(201,88,31,0.38); }
+.vocab-scroll .theory-table.cooc tr td.hl-cell{ background:var(--accent); color:var(--accent-ink); opacity:1; outline:2px solid var(--ink); outline-offset:-2px; }
+.vocab-scroll.clickable td{ cursor:pointer; }
+.ppmi-calc{ margin-top:12px; }
+.ppmi-calc-line{ font-family:'IBM Plex Mono', monospace; font-size:0.85rem; overflow-wrap:anywhere; }
+.ppmi-out{ margin-top:6px; }
+
 @media (max-width:520px){
   .brand-text h1{ font-size:2rem; }
 }
@@ -859,15 +867,19 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
 
       var view = el('div', 'matrix-view');
       out.appendChild(view);
-      matrixView(view, tokens, r.n, r.counts, String, 'cooc');
+      var coocCtl = matrixView(view, tokens, r.n, r.counts, String, 'cooc');
       var ppmiOut = el('div', 'ppmi-out');
       out.appendChild(ppmiOut);
-      ppmiBtn.addEventListener('click', function(){ renderPpmi(ppmiOut, tokens, r, delta); });
+      ppmiBtn.addEventListener('click', function(){ renderPpmi(ppmiOut, tokens, r, delta, coocCtl); });
     }
 
     // zobrazení matice: celá, nebo (u velkého slovníku) náhled s přepínáním mezi prvními řádky
     // a řádky s největšími hodnotami; vals je řídká matice Map (w·n + c) → hodnota, chybějící = 0
-    function matrixView(parent, tokens, n, vals, fmt, modeAttr){
+    // opts.onCell(w, c): kliknutí na buňku; vrací ovladač {highlight(w, c, lines, scroll), has(w, c), canShowAll()}
+    function matrixView(parent, tokens, n, vals, fmt, modeAttr, opts){
+      opts = opts || {};
+      var order = [];       // zobrazené tokeny (řádky i sloupce) v pořadí zobrazení
+      var hl = null;        // zvýrazněná pozice {w, c, lines, scroll}
       // pořadí zobrazených tokenů (řádky i sloupce): ve slovníkovém pořadí, nebo podle největší hodnoty
       var natural = [];
       for(var q = 0; q < n; q++) natural.push(q);
@@ -907,7 +919,7 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
       function esc(t){ return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
       function show(mode){
-        var order = natural;
+        order = natural;
         scroll.innerHTML = '';
         if(preview){
           if(mode === 'all') order = natural;
@@ -921,6 +933,7 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
             caption.textContent = 'Celá matice (' + n + ' × ' + n + ').';
             if(n > COOC_VIEW_MAX){
               caption.textContent = 'Celá matice (' + n + ' × ' + n + ') je na zobrazení na stránce příliš velká; stáhněte ji jako .tsv.';
+              order = [];
               return;
             }
           } else {
@@ -946,13 +959,71 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
         });
         html.push('</tbody></table>');
         scroll.innerHTML = html.join('');
+        applyHl();
       }
+
+      // zvýraznění řádku a sloupce (lines) a jejich průsečíku; pozice mimo zobrazený výřez se přeskočí
+      var marked = [];
+      function clearHl(){
+        marked.forEach(function(e){ e.classList.remove('hl-line', 'hl-cell'); });
+        marked = [];
+      }
+      function applyHl(){
+        clearHl();
+        var table = scroll.firstChild;
+        if(!hl || !table || !table.rows) return;
+        var iw = order.indexOf(hl.w);
+        var ic = order.indexOf(hl.c);
+        var rows = table.rows;
+        function mark(e, cls){ e.classList.add(cls); marked.push(e); }
+        if(hl.lines){
+          if(iw >= 0){ for(var j = 0; j < rows[iw + 1].cells.length; j++) mark(rows[iw + 1].cells[j], 'hl-line'); }
+          if(ic >= 0){ for(var i = 0; i < rows.length; i++) mark(rows[i].cells[ic + 1], 'hl-line'); }
+        }
+        if(iw >= 0 && ic >= 0){
+          var cell = rows[iw + 1].cells[ic + 1];
+          mark(cell, 'hl-cell');
+          if(hl.scroll){
+            var sr = scroll.getBoundingClientRect();
+            var cr = cell.getBoundingClientRect();
+            scroll.scrollTop += cr.top - sr.top - scroll.clientHeight / 2;
+            scroll.scrollLeft += cr.left - sr.left - scroll.clientWidth / 2;
+          }
+        }
+      }
+
+      if(opts.onCell){
+        scroll.classList.add('clickable');
+        scroll.addEventListener('click', function(e){
+          var td = e.target.closest ? e.target.closest('td') : null;
+          if(!td) return;
+          var w = order[td.parentNode.rowIndex - 1];
+          var c = order[td.cellIndex - 1];
+          if(w !== undefined && c !== undefined) opts.onCell(w, c);
+        });
+      }
+
       show('first');
+      return {
+        // true, pokud je v zobrazení řádek i sloupec pro pozici (w, c)
+        has: function(w, c){ return order.indexOf(w) >= 0 && order.indexOf(c) >= 0; },
+        // u velké matice přepne na celé zobrazení, pokud ho stránka unese; vrátí, zda je pozice vidět
+        reveal: function(w, c){
+          if(order.indexOf(w) < 0 || order.indexOf(c) < 0){
+            if(preview && n <= COOC_VIEW_MAX) show('all');
+          }
+          return order.indexOf(w) >= 0 && order.indexOf(c) >= 0;
+        },
+        highlight: function(w, c, lines, doScroll){
+          hl = {w: w, c: c, lines: lines, scroll: doScroll};
+          applyHl();
+        }
+      };
     }
 
     // PPMI: pro každé (w, c) ln( M(w,c) · m / (Σ řádku w · Σ řádku c) ), záporné hodnoty (a nuly v M) jako 0;
     // m je součet všech hodnot matice M
-    function renderPpmi(out, tokens, r, delta){
+    function renderPpmi(out, tokens, r, delta, coocCtl){
       out.innerHTML = '';
       var n = r.n;
       var rowSum = new Array(n).fill(0);
@@ -983,8 +1054,50 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
       box.appendChild(dl);
       var view = el('div', 'matrix-view');
       box.appendChild(view);
-      matrixView(view, tokens, n, vals, fmtPpmi, 'ppmi');
+      var calc = el('div', 'ppmi-calc');
+      calc.setAttribute('aria-live', 'polite');
+      calc.appendChild(el('p', 'hint', 'Kliknutím na buňku matice PPMI se v matici společného výskytu zvýrazní její řádek a sloupec a tady se ukáže výpočet.'));
+      var ppmiCtl = matrixView(view, tokens, n, vals, fmtPpmi, 'ppmi', {onCell: function(w, c){
+        ppmiCtl.highlight(w, c, false, false);
+        var visible = coocCtl.reveal(w, c);
+        coocCtl.highlight(w, c, true, true);
+        showCalc(w, c, visible);
+      }});
+      box.appendChild(calc);
       out.appendChild(box);
+
+      // číslo bez zbytečných desetinných míst, desetinná čárka
+      function num(x){ return String(Number(x.toPrecision(4))).replace('.', ',').replace('e', 'E'); }
+      function neg(t){ return t.replace('-', '\u2212'); }
+
+      // konkrétní výpočet hodnoty PPMI na pozici (w, c)
+      function showCalc(w, c, visible){
+        calc.innerHTML = '';
+        var mwc = r.counts.get(w * n + c) || 0;
+        var rw = rowSum[w];
+        var rc = rowSum[c];
+        var head = el('p', 'vocab-sum');
+        head.appendChild(document.createTextNode('Pozice w = '));
+        head.appendChild(el('span', 'tok', tokens[w]));
+        head.appendChild(document.createTextNode(', c = '));
+        head.appendChild(el('span', 'tok', tokens[c]));
+        head.appendChild(document.createTextNode(':'));
+        calc.appendChild(head);
+        calc.appendChild(el('p', 'vocab-sum', 'M(w, c) = ' + mwc + ', součet řádku w = ' + rw + ', součet řádku c = ' + rc + ', m = ' + m + '.'));
+        var line;
+        if(!mwc){
+          line = 'M(w, c) = 0, takže podíl je 0, logaritmus nuly neexistuje a PPMI(w, c) = 0.';
+        } else {
+          var q = mwc * m / (rw * rc);
+          var ln = Math.log(q);
+          line = 'PPMI(w, c) = max(0; ln( ' + mwc + ' · ' + m + ' / (' + rw + ' · ' + rc + ') )) = max(0; ln( ' + (mwc * m) + ' / ' + (rw * rc) + ' )) = max(0; ln ' + num(q) + ') = max(0; ' + neg(ln.toFixed(3).replace('.', ',')) + ') = ' + fmtPpmi(Math.max(0, ln)) + '.';
+        }
+        var lineEl = el('p', 'vocab-sum ppmi-calc-line', line);
+        calc.appendChild(lineEl);
+        if(!visible){
+          calc.appendChild(el('p', 'vocab-note', 'Řádek nebo sloupec této pozice není v aktuálním náhledu matice společného výskytu. Zvolte tam „Celá matice“ nebo odpovídající náhled.'));
+        }
+      }
     }
 
     // hodnota PPMI na obrazovce: tři desetinná místa s čárkou, 0 beze změny
