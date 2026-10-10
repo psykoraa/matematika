@@ -898,25 +898,117 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
       if(unknown){
         out.appendChild(el('p', 'vocab-note', unknown + ' tokenů z textů není ve slovníku (slovník byl vytvořen z jiného textu); do matice se nezapočítají.'));
       }
+      // df(t): v kolika dokumentech se token vyskytuje; TF-IDF = počet výskytů · ln(N / df(t)), N = počet dokumentů
+      var N = docs.length;
+      var df = new Array(n).fill(0);
+      var idf = new Array(n).fill(0);
+      for(var i0 = 0; i0 < n; i0++){
+        for(var d0 = 0; d0 < N; d0++){ if(cnt[d0][i0] > 0) df[i0]++; }
+        idf[i0] = df[i0] ? Math.log(N / df[i0]) : 0;
+      }
+      // změna oproti počtům výskytů: 'down' (zmenšení), 'up' (zvětšení), '' (beze změny)
+      function change(d, i){
+        var diff = cnt[d][i] * idf[i] - cnt[d][i];
+        return diff < -1e-12 ? 'down' : (diff > 1e-12 ? 'up' : '');
+      }
+      var downCount = 0;
+      var upCount = 0;
+      for(var d1 = 0; d1 < N; d1++){
+        for(var i1 = 0; i1 < n; i1++){
+          var ch0 = change(d1, i1);
+          if(ch0 === 'down') downCount++;
+          else if(ch0 === 'up') upCount++;
+        }
+      }
+      var tfidf = false;   // zobrazená varianta
+      function esc(t){ return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+      function fmt3(x){ return x ? x.toFixed(3).replace('.', ',') : '0'; }
+
+      var modeRow = el('div', 'row');
+      modeRow.setAttribute('role', 'group');
+      modeRow.setAttribute('aria-label', 'Varianta matice term-dokument');
+      var cntBtn = el('button', 'chip on', 'Počty výskytů');
+      var tfBtn = el('button', 'chip', 'TF-IDF');
+      cntBtn.type = tfBtn.type = 'button';
+      cntBtn.id = 'td-variant-count';
+      tfBtn.id = 'td-variant-tfidf';
+      modeRow.appendChild(cntBtn);
+      modeRow.appendChild(tfBtn);
+      modeRow.style.marginBottom = '10px';
+      out.appendChild(modeRow);
+      var note = el('div', 'td-note');
+      out.appendChild(note);
       var dl = el('div', 'vocab-open');
       var dlBtn = el('button', 'btn', 'Stáhnout matici (.tsv)');
       dlBtn.type = 'button';
       dlBtn.addEventListener('click', function(){
-        var lines = ['číslo\ttoken\tText 1\tText 2\tText 3'];
-        for(var i = 0; i < n; i++) lines.push((i + 1) + '\t' + tokens[i] + '\t' + cnt[0][i] + '\t' + cnt[1][i] + '\t' + cnt[2][i]);
-        downloadText('term-dokument-' + typeName + '.tsv', lines.join('\n') + '\n');
+        var lines = [tfidf ? 'číslo\ttoken\tdf\tln(N/df)\tText 1\tText 2\tText 3' : 'číslo\ttoken\tText 1\tText 2\tText 3'];
+        for(var i = 0; i < n; i++){
+          var row = [i + 1, tokens[i]];
+          if(tfidf){
+            row.push(df[i], idf[i] ? String(Number(idf[i].toPrecision(6))).replace('.', ',') : '0');
+            for(var d = 0; d < N; d++){ var v = cnt[d][i] * idf[i]; row.push(v ? String(Number(v.toPrecision(6))).replace('.', ',') : '0'); }
+          } else {
+            for(var d2 = 0; d2 < N; d2++) row.push(cnt[d2][i]);
+          }
+          lines.push(row.join('\t'));
+        }
+        downloadText((tfidf ? 'tf-idf-' : 'term-dokument-') + typeName + '.tsv', lines.join('\n') + '\n');
       });
       dl.appendChild(dlBtn);
       out.appendChild(dl);
-
+      var legend = el('p', 'vocab-sum');
+      out.appendChild(legend);
       var wrap = el('div', 'vocab-scroll');
-      var html = ['<table class="theory-table cooc"><thead><tr><th>č.</th><th>token</th><th>Text 1</th><th>Text 2</th><th>Text 3</th></tr></thead><tbody>'];
-      for(var k = 0; k < n; k++){
-        html.push('<tr><th>' + (k + 1) + '</th><th>' + String(tokens[k]).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</th><td>' + cnt[0][k] + '</td><td>' + cnt[1][k] + '</td><td>' + cnt[2][k] + '</td></tr>');
-      }
-      html.push('</tbody></table>');
-      wrap.innerHTML = html.join('');
       out.appendChild(wrap);
+
+      function renderNote(){
+        note.innerHTML = '';
+        legend.innerHTML = '';
+        legend.hidden = !tfidf;
+        if(!tfidf) return;
+        var hint = el('p', 'hint', 'TF-IDF(t, d) = počet výskytů tokenu t v dokumentu d · ln(N / df(t)), kde N = ' + N + ' je počet dokumentů a df(t) je počet dokumentů, ve kterých se token t vyskytuje. Token ve všech dokumentech má ln(1) = 0, takže jeho hodnoty klesnou na 0.');
+        note.appendChild(hint);
+        var box = el('div', 'ppmi-calc-math');
+        var tex = '\\mathrm{TF\\text{-}IDF}(t,d)=\\mathrm{tf}(t,d)\\cdot\\ln\\frac{N}{\\mathrm{df}(t)},\\qquad N=' + N;
+        if(window.katex){
+          try{ window.katex.render(tex, box, {displayMode: true, throwOnError: false, strict: 'ignore'}); note.appendChild(box); }catch(e){}
+        }
+        legend.appendChild(el('span', 'ppmi-chip ppmi-chip-down', 'červeně'));
+        legend.appendChild(document.createTextNode(' hodnota se oproti počtům výskytů zmenšila (' + downCount + '×), '));
+        legend.appendChild(el('span', 'ppmi-chip ppmi-chip-up', 'zeleně'));
+        legend.appendChild(document.createTextNode(' zvětšila (' + upCount + '×); beze změny zůstávají nulové hodnoty.'));
+      }
+
+      function renderTable(){
+        var head = '<th>č.</th><th>token</th>' + (tfidf ? '<th>df</th><th>ln(N/df)</th>' : '') + '<th>Text 1</th><th>Text 2</th><th>Text 3</th>';
+        var html = ['<table class="theory-table cooc"><thead><tr>' + head + '</tr></thead><tbody>'];
+        for(var k = 0; k < n; k++){
+          var row = '<tr><th>' + (k + 1) + '</th><th>' + esc(tokens[k]) + '</th>';
+          if(tfidf) row += '<td>' + df[k] + '</td><td>' + fmt3(idf[k]) + '</td>';
+          for(var d = 0; d < N; d++){
+            if(!tfidf){ row += '<td>' + cnt[d][k] + '</td>'; continue; }
+            var ch = change(d, k);
+            row += '<td' + (ch ? ' class="cell-' + ch + '"' : '') + '>' + fmt3(cnt[d][k] * idf[k]) + '</td>';
+          }
+          html.push(row + '</tr>');
+        }
+        html.push('</tbody></table>');
+        wrap.innerHTML = html.join('');
+      }
+
+      function setVariant(tf){
+        tfidf = tf;
+        cntBtn.classList.toggle('on', !tf);
+        tfBtn.classList.toggle('on', tf);
+        cntBtn.setAttribute('aria-pressed', tf ? 'false' : 'true');
+        tfBtn.setAttribute('aria-pressed', tf ? 'true' : 'false');
+        renderNote();
+        renderTable();
+      }
+      cntBtn.addEventListener('click', function(){ setVariant(false); });
+      tfBtn.addEventListener('click', function(){ setVariant(true); });
+      setVariant(false);
     }
 
     var COOC_FULL = 100;      // do tohoto počtu tokenů se zobrazí celá matice
