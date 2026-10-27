@@ -973,6 +973,57 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
       var gramOut = el('div', 'td-gram-out');
       out.appendChild(gramOut);
       var gramShown = false;
+      var eigShown = false;
+      // vlastní čísla a vektory symetrické matice Jacobiho metodou; vrací dvojice seřazené od největšího vlastního čísla
+      function eigSym(m){
+        var k = m.length;
+        var a = m.map(function(r){ return r.slice(); });
+        var v = [];
+        for(var i = 0; i < k; i++){ v.push(new Array(k).fill(0)); v[i][i] = 1; }
+        for(var sweep = 0; sweep < 100; sweep++){
+          var off = 0;
+          for(var p = 0; p < k; p++) for(var q = p + 1; q < k; q++) off += a[p][q] * a[p][q];
+          if(off < 1e-24) break;
+          for(var p1 = 0; p1 < k; p1++){
+            for(var q1 = p1 + 1; q1 < k; q1++){
+              if(Math.abs(a[p1][q1]) < 1e-300) continue;
+              var theta = (a[q1][q1] - a[p1][p1]) / (2 * a[p1][q1]);
+              var t = (theta >= 0 ? 1 : -1) / (Math.abs(theta) + Math.sqrt(theta * theta + 1));
+              var c = 1 / Math.sqrt(t * t + 1), sn = t * c;
+              for(var r = 0; r < k; r++){
+                var arp = a[r][p1], arq = a[r][q1];
+                a[r][p1] = c * arp - sn * arq;
+                a[r][q1] = sn * arp + c * arq;
+              }
+              for(var r1 = 0; r1 < k; r1++){
+                var apr = a[p1][r1], aqr = a[q1][r1];
+                a[p1][r1] = c * apr - sn * aqr;
+                a[q1][r1] = sn * apr + c * aqr;
+              }
+              for(var r2 = 0; r2 < k; r2++){
+                var vrp = v[r2][p1], vrq = v[r2][q1];
+                v[r2][p1] = c * vrp - sn * vrq;
+                v[r2][q1] = sn * vrp + c * vrq;
+              }
+            }
+          }
+        }
+        var res = [];
+        for(var j = 0; j < k; j++){
+          var vec = v.map(function(row){ return row[j]; });
+          // znaménko: největší složka (v absolutní hodnotě) je kladná
+          var big = 0;
+          for(var b = 1; b < k; b++) if(Math.abs(vec[b]) > Math.abs(vec[big]) + 1e-12) big = b;
+          if(vec[big] < 0) vec = vec.map(function(x){ return -x; });
+          res.push({val: a[j][j], vec: vec});
+        }
+        res.sort(function(x, y){ return y.val - x.val; });
+        return res;
+      }
+      function fmtE(x, dec){
+        if(Math.abs(x) < 0.5 * Math.pow(10, -dec)) return '0';
+        return x.toFixed(dec).replace('.', ',');
+      }
       function xVal(d, i){ return tfidf ? cnt[d][i] * idf[i] : cnt[d][i]; }
       function renderGram(){
         gramOut.innerHTML = '';
@@ -1003,6 +1054,42 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
         var tw = el('div', '');
         tw.innerHTML = html.join('');
         gramOut.appendChild(tw);
+
+        var eigRow = el('div', 'vocab-open');
+        eigRow.style.marginTop = '14px';
+        var eigBtn = el('button', 'btn primary', 'Spočítat vlastní čísla a vlastní vektory');
+        eigBtn.type = 'button';
+        eigBtn.id = 'td-eig';
+        eigRow.appendChild(eigBtn);
+        gramOut.appendChild(eigRow);
+        var eigOut = el('div', 'td-eig-out');
+        gramOut.appendChild(eigOut);
+        function renderEig(){
+          eigOut.innerHTML = '';
+          var e = eigSym(g);
+          eigOut.appendChild(el('p', 'hint', 'Vlastní číslo λ a vlastní vektor v ≠ 0 matice Xᵀ·X splňují (Xᵀ·X)·v = λ·v. Matice Xᵀ·X je symetrická, proto má ' + N + ' reálná vlastní čísla (nezáporná) a vlastní vektory lze zvolit navzájem kolmé. Vektory jsou normované na délku 1 a znaménko je zvolené tak, aby jejich největší složka byla kladná. Vlastní čísla jsou seřazená od největšího.'));
+          var box2 = el('div', 'ppmi-calc-math');
+          if(window.katex){
+            try{ window.katex.render('(X^{\\mathsf T}X)\\,\\mathbf v=\\lambda\\,\\mathbf v,\\qquad \\lVert\\mathbf v\\rVert=1', box2, {displayMode: true, throwOnError: false, strict: 'ignore'}); eigOut.appendChild(box2); }catch(err){}
+          }
+          var h2 = ['<div class="theory-table-wrap"><table class="theory-table cooc" style="width:auto;min-width:0"><thead><tr><th></th>'];
+          for(var j = 0; j < e.length; j++) h2.push('<th>λ<sub>' + (j + 1) + '</sub>, v<sub>' + (j + 1) + '</sub></th>');
+          h2.push('</tr></thead><tbody><tr><th>λ</th>');
+          for(var j1 = 0; j1 < e.length; j1++) h2.push('<td>' + fmtE(e[j1].val, 3) + '</td>');
+          h2.push('</tr>');
+          for(var r2 = 0; r2 < N; r2++){
+            h2.push('<tr><th>Text ' + (r2 + 1) + '</th>');
+            for(var j2 = 0; j2 < e.length; j2++) h2.push('<td>' + fmtE(e[j2].vec[r2], 4) + '</td>');
+            h2.push('</tr>');
+          }
+          h2.push('</tbody></table></div>');
+          var tw2 = el('div', '');
+          tw2.innerHTML = h2.join('');
+          eigOut.appendChild(tw2);
+          eigOut.appendChild(el('p', 'hint', 'Ve sloupci λᵢ, vᵢ je nahoře vlastní číslo a pod ním složky příslušného vlastního vektoru (jedna složka pro každý text).'));
+        }
+        eigBtn.addEventListener('click', function(){ eigShown = true; renderEig(); });
+        if(eigShown) renderEig();
       }
       gramBtn.addEventListener('click', function(){ gramShown = true; renderGram(); });
 
