@@ -266,7 +266,7 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
       <div class="vocab-controls" style="margin-top:14px">
         <button class="btn primary" id="btn-termdok" type="button">Vytvořit matici term-dokument</button>
       </div>
-      <div class="hint">Texty se rozloží na tokeny podle slovníku vybraného algoritmu, který je vytvořený na kartě Tokenizace. Matice má tři sloupce: levý je Text 1, prostřední Text 2 a pravý Text 3. Číslo řádku je číslo tokenu ve slovníku; na řádku je počet výskytů tohoto tokenu v příslušném textu.</div>
+      <div class="hint">Texty se rozloží na tokeny podle slovníku vybraného algoritmu, který je vytvořený na kartě Tokenizace. Matice má tři sloupce: levý je Text 1, prostřední Text 2 a pravý Text 3. Číslo řádku je číslo tokenu ve slovníku; na řádku je počet výskytů tohoto tokenu v příslušném textu. Zobrazenou matici (počty výskytů nebo TF-IDF) označujeme X.</div>
       <div id="td-out" class="vocab-out" aria-live="polite"></div>
     </div>
   </div>
@@ -962,6 +962,50 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
       var wrap = el('div', 'vocab-scroll');
       out.appendChild(wrap);
 
+      // matice X^T·X (3 × 3): prvek (i, j) je skalární součin sloupců i a j matice X
+      var gramRow = el('div', 'vocab-open');
+      gramRow.style.marginTop = '14px';
+      var gramBtn = el('button', 'btn primary', 'Spočítat matici Xᵀ·X');
+      gramBtn.type = 'button';
+      gramBtn.id = 'td-gram';
+      gramRow.appendChild(gramBtn);
+      out.appendChild(gramRow);
+      var gramOut = el('div', 'td-gram-out');
+      out.appendChild(gramOut);
+      var gramShown = false;
+      function xVal(d, i){ return tfidf ? cnt[d][i] * idf[i] : cnt[d][i]; }
+      function renderGram(){
+        gramOut.innerHTML = '';
+        var g = [];
+        for(var a = 0; a < N; a++){
+          g.push([]);
+          for(var b = 0; b < N; b++){
+            var s = 0;
+            for(var i = 0; i < n; i++) s += xVal(a, i) * xVal(b, i);
+            g[a].push(s);
+          }
+        }
+        gramOut.appendChild(el('p', 'hint', 'Matice X je ' + (tfidf ? 'matice TF-IDF' : 'matice počtů výskytů') + ' (' + n + ' × ' + N + '), Xᵀ·X má rozměr ' + N + ' × ' + N + '. Prvek na pozici (i, j) je skalární součin sloupců Text i a Text j, tj. součet součinů hodnot obou textů přes všechny tokeny. Na diagonále jsou součty druhých mocnin hodnot jednotlivých textů.'));
+        var box = el('div', 'ppmi-calc-math');
+        var tex = '(X^{\\mathsf T}X)_{ij}=\\sum_{t=1}^{' + n + '} X_{t,i}\\,X_{t,j}';
+        if(window.katex){
+          try{ window.katex.render(tex, box, {displayMode: true, throwOnError: false, strict: 'ignore'}); gramOut.appendChild(box); }catch(e){}
+        }
+        var html = ['<div class="theory-table-wrap"><table class="theory-table cooc" style="width:auto;min-width:0"><thead><tr><th></th>'];
+        for(var h = 0; h < N; h++) html.push('<th>Text ' + (h + 1) + '</th>');
+        html.push('</tr></thead><tbody>');
+        for(var r = 0; r < N; r++){
+          html.push('<tr><th>Text ' + (r + 1) + '</th>');
+          for(var c = 0; c < N; c++) html.push('<td>' + (tfidf ? fmt3(g[r][c]) : g[r][c]) + '</td>');
+          html.push('</tr>');
+        }
+        html.push('</tbody></table></div>');
+        var tw = el('div', '');
+        tw.innerHTML = html.join('');
+        gramOut.appendChild(tw);
+      }
+      gramBtn.addEventListener('click', function(){ gramShown = true; renderGram(); });
+
       function renderNote(){
         note.innerHTML = '';
         legend.innerHTML = '';
@@ -1005,6 +1049,7 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
         tfBtn.setAttribute('aria-pressed', tf ? 'true' : 'false');
         renderNote();
         renderTable();
+        if(gramShown) renderGram();
       }
       cntBtn.addEventListener('click', function(){ setVariant(false); });
       tfBtn.addEventListener('click', function(){ setVariant(true); });
