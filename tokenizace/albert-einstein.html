@@ -974,6 +974,7 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
       out.appendChild(gramOut);
       var gramShown = false;
       var eigShown = false;
+      var uShown = false;
       // vlastní čísla a vektory symetrické matice Jacobiho metodou; vrací dvojice seřazené od největšího vlastního čísla
       function eigSym(m){
         var k = m.length;
@@ -1087,6 +1088,61 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
           tw2.innerHTML = h2.join('');
           eigOut.appendChild(tw2);
           eigOut.appendChild(el('p', 'hint', 'Ve sloupci λᵢ, vᵢ je nahoře vlastní číslo a pod ním složky příslušného vlastního vektoru (jedna složka pro každý text).'));
+
+          var uRow = el('div', 'vocab-open');
+          uRow.style.marginTop = '14px';
+          var uBtn = el('button', 'btn primary', 'Spočítat vektory u = X·v / σ');
+          uBtn.type = 'button';
+          uBtn.id = 'td-u';
+          uRow.appendChild(uBtn);
+          eigOut.appendChild(uRow);
+          var uOut = el('div', 'td-u-out');
+          eigOut.appendChild(uOut);
+          function renderU(){
+            uOut.innerHTML = '';
+            var k = e.length;
+            // σᵢ = √λᵢ (záporné zaokrouhlovací chyby u nulového λ se berou jako 0)
+            var sig = e.map(function(p){ return Math.sqrt(Math.max(p.val, 0)); });
+            var maxSig = sig.length ? sig[0] : 0;
+            var ok = sig.map(function(x){ return x > 1e-9 * Math.max(maxSig, 1); });
+            var u = [];
+            for(var j = 0; j < k; j++){
+              var col = new Array(n).fill(0);
+              if(ok[j]){
+                for(var i = 0; i < n; i++){
+                  var s = 0;
+                  for(var d = 0; d < N; d++) s += xVal(d, i) * e[j].vec[d];
+                  col[i] = s / sig[j];
+                }
+              }
+              u.push(col);
+            }
+            uOut.appendChild(el('p', 'hint', 'Pro každé vlastní číslo λᵢ je σᵢ = √λᵢ a uᵢ = X·vᵢ / σᵢ. Vektor uᵢ má ' + n + ' složek (jednu pro každý token slovníku), má délku 1 a vektory u₁, u₂, u₃ jsou navzájem kolmé. Čísla σᵢ se nazývají singulární čísla matice X.'));
+            var box3 = el('div', 'ppmi-calc-math');
+            if(window.katex){
+              try{ window.katex.render('\\sigma_i=\\sqrt{\\lambda_i},\\qquad \\mathbf u_i=\\frac{X\\,\\mathbf v_i}{\\sigma_i}', box3, {displayMode: true, throwOnError: false, strict: 'ignore'}); uOut.appendChild(box3); }catch(err){}
+            }
+            var sp = el('p', 'vocab-sum');
+            sp.textContent = sig.map(function(x, j){ return 'σ' + '₁₂₃₄₅₆₇₈₉'.charAt(j) + ' = ' + fmtE(x, 3); }).join(', ') + '.';
+            uOut.appendChild(sp);
+            if(ok.indexOf(false) >= 0){
+              uOut.appendChild(el('p', 'vocab-note', 'Pro nulové vlastní číslo je σ = 0 a vektor u nelze tímto vzorcem spočítat; ve sloupci je pomlčka.'));
+            }
+            var h3 = ['<table class="theory-table cooc"><thead><tr><th>č.</th><th>token</th>'];
+            for(var j1 = 0; j1 < k; j1++) h3.push('<th>u<sub>' + (j1 + 1) + '</sub></th>');
+            h3.push('</tr></thead><tbody>');
+            for(var i1 = 0; i1 < n; i1++){
+              h3.push('<tr><th>' + (i1 + 1) + '</th><th>' + esc(tokens[i1]) + '</th>');
+              for(var j2 = 0; j2 < k; j2++) h3.push('<td>' + (ok[j2] ? fmtE(u[j2][i1], 4) : '–') + '</td>');
+              h3.push('</tr>');
+            }
+            h3.push('</tbody></table>');
+            var sc = el('div', 'vocab-scroll');
+            sc.innerHTML = h3.join('');
+            uOut.appendChild(sc);
+          }
+          uBtn.addEventListener('click', function(){ uShown = true; renderU(); });
+          if(uShown) renderU();
         }
         eigBtn.addEventListener('click', function(){ eigShown = true; renderEig(); });
         if(eigShown) renderEig();
