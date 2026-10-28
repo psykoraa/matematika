@@ -1152,7 +1152,7 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
             var sc = el('div', 'vocab-scroll');
             sc.innerHTML = h3.join('');
             uOut.appendChild(sc);
-            svd = {u: u, sig: sig, ok: ok};
+            svd = {u: u, sig: sig, ok: ok, v: e.map(function(p){ return p.vec; })};
 
             // volba k: podíl součtu prvních k vlastních čísel na součtu všech
             var kTitle = el('div', 'panel-title', 'Volba hodnoty k');
@@ -1343,6 +1343,7 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
           try{ window.katex.render('\\hat{\\mathbf q}=\\Sigma_k^{-1}\\,U_k^{\\mathsf T}\\,\\mathbf q,\\qquad \\hat q_i=\\frac{\\mathbf u_i^{\\mathsf T}\\mathbf q}{\\sigma_i},\\quad i=1,\\dots,k', box, {displayMode: true, throwOnError: false, strict: 'ignore'}); qhOut.appendChild(box); }catch(err){}
         }
         var qh = [];
+        var qv = [];
         var h = ['<table class="theory-table cooc" style="width:auto;min-width:0"><thead><tr><th>i</th><th>σ<sub>i</sub></th><th>u<sub>i</sub><sup>T</sup>·q</th><th>q̂<sub>i</sub></th></tr></thead><tbody>'];
         var bad = false;
         for(var j = 0; j < kk; j++){
@@ -1352,6 +1353,7 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
           if(!ok) bad = true;
           var val = ok ? dot / svd.sig[j] : NaN;
           qh.push(ok ? fmtE(val, 4) : '–');
+          qv.push(ok ? val : 0);
           h.push('<tr><th>' + (j + 1) + '</th><td>' + fmtE(svd.sig[j], 3) + '</td><td>' + (ok ? fmtE(dot, 4) : '–') + '</td><td>' + (ok ? fmtE(val, 4) : '–') + '</td></tr>');
         }
         h.push('</tbody></table>');
@@ -1360,6 +1362,47 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
         qhOut.appendChild(tw);
         if(bad) qhOut.appendChild(el('p', 'vocab-note', 'Pro σ = 0 nelze dělit; příslušná složka chybí.'));
         qhOut.appendChild(el('div', 'q-vec', 'q̂ = (' + qh.join('; ') + ')'));
+
+        // kosinová podobnost q̂ s dokumenty; dokument j je v prostoru k dimenzí řádek j matice V_k: (v₁[j], …, v_k[j])
+        var cTitle = el('div', 'panel-title', 'Kosinová podobnost dotazu s dokumenty');
+        cTitle.style.marginTop = '22px';
+        qhOut.appendChild(cTitle);
+        qhOut.appendChild(el('p', 'hint', 'Dokument (Text j) má v prostoru k dimenzí souřadnice d̂_j = (v₁[j], …, v_k[j]), tj. j-té složky prvních k vlastních vektorů v (j-tý řádek matice V_k). Kosinová podobnost je skalární součin q̂ · d̂_j vydělený součinem délek obou vektorů; je z intervalu ⟨−1; 1⟩ a čím je bližší 1, tím je dokument dotazu podobnější.'));
+        var box2 = el('div', 'ppmi-calc-math');
+        if(window.katex){
+          try{ window.katex.render('\\cos(\\hat{\\mathbf q},\\hat{\\mathbf d}_j)=\\frac{\\hat{\\mathbf q}\\cdot\\hat{\\mathbf d}_j}{\\lVert\\hat{\\mathbf q}\\rVert\\,\\lVert\\hat{\\mathbf d}_j\\rVert},\\qquad \\hat{\\mathbf d}_j=(v_{1j},\\dots,v_{kj})', box2, {displayMode: true, throwOnError: false, strict: 'ignore'}); qhOut.appendChild(box2); }catch(err){}
+        }
+        var nq = 0;
+        qv.forEach(function(x){ nq += x * x; });
+        nq = Math.sqrt(nq);
+        var cosv = [];
+        var best = -1;
+        for(var d = 0; d < N; d++){
+          var dv = [], dot2 = 0, nd = 0;
+          for(var j2 = 0; j2 < kk; j2++){
+            var x = svd.v[j2][d];
+            dv.push(x);
+            dot2 += qv[j2] * x;
+            nd += x * x;
+          }
+          nd = Math.sqrt(nd);
+          var c = (nq > 1e-12 && nd > 1e-12) ? dot2 / (nq * nd) : NaN;
+          cosv.push({dv: dv, dot: dot2, nd: nd, c: c});
+          if(!isNaN(c) && (best < 0 || c > cosv[best].c)) best = d;
+        }
+        var h2 = ['<table class="theory-table cooc" style="width:auto;min-width:0"><thead><tr><th>dokument</th><th>d̂<sub>j</sub></th><th>q̂·d̂<sub>j</sub></th><th>‖d̂<sub>j</sub>‖</th><th>cos</th></tr></thead><tbody>'];
+        cosv.forEach(function(r, d){
+          var cls = d === best ? ' class="k-sel"' : '';
+          h2.push('<tr><th>Text ' + (d + 1) + '</th><td>(' + r.dv.map(function(x){ return fmtE(x, 4); }).join('; ') + ')</td><td>' + fmtE(r.dot, 4) + '</td><td>' + fmtE(r.nd, 4) + '</td><td' + cls + '>' + (isNaN(r.c) ? '–' : fmtE(r.c, 4)) + '</td></tr>');
+        });
+        h2.push('</tbody></table>');
+        var tw2 = el('div', 'theory-table-wrap');
+        tw2.innerHTML = h2.join('');
+        qhOut.appendChild(tw2);
+        var sumP = el('p', 'hint');
+        if(nq <= 1e-12) sumP.textContent = 'Vektor q̂ je nulový (‖q̂‖ = 0), kosinovou podobnost nelze spočítat.';
+        else sumP.textContent = '‖q̂‖ = ' + fmtE(nq, 4) + '. Dotazu je nejpodobnější Text ' + (best + 1) + ' (zvýrazněno).';
+        qhOut.appendChild(sumP);
       }
       qhBtn.addEventListener('click', function(){ qhatShown = true; renderQhat(); });
 
