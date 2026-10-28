@@ -141,6 +141,7 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
 .vocab-scroll .theory-table.cooc tr td.hl-line{ background:rgba(201,88,31,0.18); }
 .vocab-scroll .theory-table.cooc tr th.hl-line{ background:rgba(201,88,31,0.38); }
 .vocab-scroll .theory-table.cooc tr td.hl-cell{ background:var(--accent); color:var(--accent-ink); opacity:1; outline:2px solid var(--ink); outline-offset:-2px; }
+.theory-table.cooc tr .k-sel{ background:var(--accent); color:var(--accent-ink); }
 .vocab-scroll.clickable td{ cursor:pointer; }
 .ppmi-calc{ margin-top:12px; }
 .ppmi-calc-math{ overflow-x:auto; overflow-y:hidden; }
@@ -975,6 +976,7 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
       var gramShown = false;
       var eigShown = false;
       var uShown = false;
+      var kSel = 1;   // zvolený počet zachovaných vlastních čísel
       // vlastní čísla a vektory symetrické matice Jacobiho metodou; vrací dvojice seřazené od největšího vlastního čísla
       function eigSym(m){
         var k = m.length;
@@ -1140,6 +1142,52 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
             var sc = el('div', 'vocab-scroll');
             sc.innerHTML = h3.join('');
             uOut.appendChild(sc);
+
+            // volba k: podíl součtu prvních k vlastních čísel na součtu všech
+            var kTitle = el('div', 'panel-title', 'Volba hodnoty k');
+            kTitle.style.marginTop = '22px';
+            uOut.appendChild(kTitle);
+            var kRow = el('div', 'row');
+            kRow.setAttribute('role', 'group');
+            kRow.setAttribute('aria-label', 'Hodnota k');
+            kRow.style.marginBottom = '10px';
+            var kBtns = [];
+            for(var kk = 1; kk <= k; kk++){
+              var kb = el('button', 'chip', 'k = ' + kk);
+              kb.type = 'button';
+              kb.id = 'td-k-' + kk;
+              kb.setAttribute('data-k', kk);
+              kRow.appendChild(kb);
+              kBtns.push(kb);
+            }
+            uOut.appendChild(kRow);
+            var total = 0;
+            e.forEach(function(p){ total += Math.max(p.val, 0); });
+            var cum = [], acc = 0;
+            e.forEach(function(p){ acc += Math.max(p.val, 0); cum.push(total ? 100 * acc / total : 0); });
+            var kTab = el('div', 'theory-table-wrap');
+            uOut.appendChild(kTab);
+            var kNote = el('p', 'hint');
+            uOut.appendChild(kNote);
+            function renderK(){
+              if(kSel > k) kSel = k;
+              kBtns.forEach(function(b, j){
+                b.classList.toggle('on', j + 1 === kSel);
+                b.setAttribute('aria-pressed', j + 1 === kSel ? 'true' : 'false');
+              });
+              function cell(tag, j, txt){ return '<' + tag + (j + 1 === kSel ? ' class="k-sel"' : '') + '>' + txt + '</' + tag + '>'; }
+              var h4 = ['<table class="theory-table cooc" style="width:auto;min-width:0"><tbody><tr><th>k</th>'];
+              for(var j = 0; j < k; j++) h4.push(cell('th', j, j + 1));
+              h4.push('</tr><tr><th>λ<sub>k</sub></th>');
+              for(var j1 = 0; j1 < k; j1++) h4.push(cell('td', j1, fmtE(e[j1].val, 3)));
+              h4.push('</tr><tr><th>(λ<sub>1</sub> + … + λ<sub>k</sub>) / (λ<sub>1</sub> + … + λ<sub>' + k + '</sub>)</th>');
+              for(var j2 = 0; j2 < k; j2++) h4.push(cell('td', j2, cum[j2].toFixed(1).replace('.', ',') + ' %'));
+              h4.push('</tr></tbody></table>');
+              kTab.innerHTML = h4.join('');
+              kNote.textContent = 'Pro k = ' + kSel + ' tvoří ' + (kSel === 1 ? 'první vlastní číslo ' : 'součet prvních ' + kSel + ' vlastních čísel ') + cum[kSel - 1].toFixed(1).replace('.', ',') + ' % součtu všech vlastních čísel matice Xᵀ·X.';
+            }
+            kBtns.forEach(function(b){ b.addEventListener('click', function(){ kSel = parseInt(b.getAttribute('data-k'), 10); renderK(); }); });
+            renderK();
           }
           uBtn.addEventListener('click', function(){ uShown = true; renderU(); });
           if(uShown) renderU();
