@@ -94,6 +94,11 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
 .vocab-controls .field{ flex:1 1 240px; max-width:360px; }
 .vocab-out{ margin-top:14px; }
 .vocab-open{ margin:4px 0 12px; display:flex; flex-wrap:wrap; gap:10px; }
+.q-split{ display:flex; flex-wrap:wrap; gap:6px; margin:8px 0 12px; }
+.q-tok{ font-family:'IBM Plex Mono', monospace; font-weight:600; border:1px solid var(--line); border-radius:6px; padding:2px 8px; background:#fff; }
+.q-tok.q-miss{ border-color:#b3392b; color:#b3392b; border-style:dashed; }
+.q-sep{ align-self:center; color:var(--ink-soft); }
+.q-vec{ font-family:'IBM Plex Mono', monospace; font-size:0.85rem; line-height:1.6; word-break:break-all; border:1px solid var(--line); border-radius:8px; padding:10px 12px; background:#fff; max-height:200px; overflow:auto; }
 .big-text{
   display:block; width:100%; min-height:220px; resize:vertical;
   border:1px solid var(--line); border-radius:8px; background:#fff;
@@ -340,6 +345,7 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
   });
 
   var instances = [];   // tři nastavení (BPE, WordPiece, SentencePiece)
+  var tdQuery = '';     // text dotazu na kartě Matice term-dokument (zachová se při novém výpočtu matice)
 
   function setupTokenizer(sfx, mode){
     // ---------- hledání a zvýraznění v textu ----------
@@ -1196,6 +1202,108 @@ mark.hl-ab{ background:repeating-linear-gradient(135deg, #ffc400 0 4px, #4fc3ff 
         if(eigShown) renderEig();
       }
       gramBtn.addEventListener('click', function(){ gramShown = true; renderGram(); });
+
+      // dotaz → vektor q: q_t = kolikrát je token t v rozkladu dotazu
+      var qTitle = el('div', 'panel-title', 'Dotaz');
+      qTitle.style.marginTop = '26px';
+      out.appendChild(qTitle);
+      var qCtl = el('div', 'vocab-controls');
+      var qField = el('div', 'field');
+      var qLabel = el('label', '', 'Text dotazu');
+      qLabel.setAttribute('for', 'td-query');
+      var qWrap = el('div', 'input-wrap');
+      var qIn = el('input', '');
+      qIn.type = 'text';
+      qIn.id = 'td-query';
+      qIn.autocomplete = 'off';
+      qIn.spellcheck = false;
+      qIn.placeholder = 'např. chůze';
+      qIn.value = tdQuery;
+      qWrap.appendChild(qIn);
+      qField.appendChild(qLabel);
+      qField.appendChild(qWrap);
+      qCtl.appendChild(qField);
+      var qBtn = el('button', 'btn primary', 'Převést dotaz na vektor q');
+      qBtn.type = 'button';
+      qBtn.id = 'td-query-btn';
+      qCtl.appendChild(qBtn);
+      out.appendChild(qCtl);
+      out.appendChild(el('div', 'hint', 'Dotaz se rozloží na tokeny slovníku tak, aby se z nich dal přesně složit' + (stream ? ' (mezery jsou znak „_“)' : ' (slova se rozkládají každé zvlášť; mezery a interpunkce se vynechají)') + (lastVocab.cs ? '' : ' a velká písmena se převedou na malá') + '. Přednost mají delší tokeny: použije se rozklad s nejmenším počtem tokenů, a pokud je jich víc, ten s delšími tokeny na začátku. Vektor q má ' + n + ' složek; složka q_t je počet výskytů tokenu t v rozkladu dotazu.'));
+      var qOut = el('div', 'td-query-out');
+      out.appendChild(qOut);
+
+      var maxLen = 1;
+      tokens.forEach(function(t){ if(t.length > maxLen) maxLen = t.length; });
+      // rozklad jednotky na co nejméně tokenů; při shodě rozhodují delší tokeny na začátku.
+      // best[i] = rozklad zbytku unit.slice(i); znak, který nelze pokrýt, se vrátí jako chybějící kus
+      function segmentUnit(unit){
+        var L = unit.length;
+        var best = new Array(L + 1);
+        best[L] = {cnt: 0, miss: 0, lens: []};
+        for(var i = L - 1; i >= 0; i--){
+          var cand = null;
+          for(var len = Math.min(maxLen, L - i); len >= 1; len--){
+            if(index[unit.substr(i, len)] === undefined) continue;
+            var rest = best[i + len];
+            var c = {cnt: rest.cnt + 1, miss: rest.miss, lens: [len].concat(rest.lens)};
+            if(!cand || c.miss < cand.miss || (c.miss === cand.miss && c.cnt < cand.cnt)) cand = c;
+          }
+          if(!cand){   // znak není ve slovníku
+            var r = best[i + 1];
+            cand = {cnt: r.cnt + 1, miss: r.miss + 1, lens: [-1].concat(r.lens)};
+          }
+          best[i] = cand;
+        }
+        var pieces = [];
+        var pos = 0;
+        best[0].lens.forEach(function(len){
+          if(len < 0){ pieces.push({t: unit.charAt(pos), miss: true}); pos += 1; }
+          else { pieces.push({t: unit.substr(pos, len), miss: false}); pos += len; }
+        });
+        return pieces;
+      }
+
+      function renderQuery(){
+        tdQuery = qIn.value;
+        qOut.innerHTML = '';
+        var units = unitsOfText(qIn.value.replace(/\s+/g, ' ').trim(), lastVocab.cs);
+        if(!units.length){
+          qOut.appendChild(el('p', 'vocab-note', 'Napište dotaz.'));
+          return;
+        }
+        var q = new Array(n).fill(0);
+        var missing = [];
+        var split = el('div', 'q-split');
+        units.forEach(function(u, ui){
+          if(ui) split.appendChild(el('span', 'q-sep', '·'));
+          segmentUnit(u).forEach(function(p){
+            split.appendChild(el('span', 'q-tok' + (p.miss ? ' q-miss' : ''), p.t));
+            if(p.miss) missing.push(p.t);
+            else q[index[p.t]]++;
+          });
+        });
+        qOut.appendChild(el('p', 'vocab-sum', 'Rozklad dotazu na tokeny:'));
+        qOut.appendChild(split);
+        if(missing.length){
+          qOut.appendChild(el('p', 'vocab-note', 'Znaky ' + missing.map(function(c){ return '„' + c + '“'; }).join(', ') + ' nejsou ve slovníku (jsou čárkovaně); do vektoru q se nezapočítají.'));
+        }
+        qOut.appendChild(el('p', 'vocab-sum', 'Vektor q (' + n + ' složek):'));
+        qOut.appendChild(el('div', 'q-vec', 'q = (' + q.join(', ') + ')'));
+        var nz = [];
+        for(var i = 0; i < n; i++) if(q[i]) nz.push(i);
+        if(nz.length){
+          qOut.appendChild(el('p', 'vocab-sum', 'Nenulové složky vektoru q:'));
+          var h = ['<table class="theory-table cooc" style="width:auto;min-width:0"><thead><tr><th>č.</th><th>token</th><th>q</th></tr></thead><tbody>'];
+          nz.forEach(function(i){ h.push('<tr><th>' + (i + 1) + '</th><th>' + esc(tokens[i]) + '</th><td>' + q[i] + '</td></tr>'); });
+          h.push('</tbody></table>');
+          var tw = el('div', 'theory-table-wrap');
+          tw.innerHTML = h.join('');
+          qOut.appendChild(tw);
+        }
+      }
+      qBtn.addEventListener('click', renderQuery);
+      qIn.addEventListener('keydown', function(ev){ if(ev.key === 'Enter') renderQuery(); });
+      if(tdQuery) renderQuery();
 
       function renderNote(){
         note.innerHTML = '';
